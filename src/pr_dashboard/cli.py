@@ -364,6 +364,18 @@ async def cmd_excluded(store: PrDataStore) -> None:
         console.print(f"  • {repo}")
 
 
+async def cmd_config() -> None:
+    from .config import CONFIG_DIR, CONFIG_FILE
+
+    if not CONFIG_FILE.exists():
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        CONFIG_FILE.write_text("{}\n", encoding="utf-8")
+        console.print(f"[green]Created:[/] {CONFIG_FILE}")
+    else:
+        console.print(f"[bold]Config file:[/] {CONFIG_FILE}")
+    console.print(f"[bold]Config dir:[/]  {CONFIG_DIR}")
+
+
 # ── Entry point ───────────────────────────────────────────────────────────
 
 
@@ -406,6 +418,8 @@ async def run(args: argparse.Namespace) -> None:
                 await cmd_include(store, args.repo)
             case "excluded":
                 await cmd_excluded(store)
+            case "config":
+                await cmd_config()
             case "sources":
                 await cmd_sources(store, show_all=getattr(args, "all", False))
             case "register":
@@ -464,6 +478,7 @@ def main() -> None:
     include_p.add_argument("repo", help="Repo name to include")
 
     sub.add_parser("excluded", help="List excluded repos")
+    sub.add_parser("config", help="Show config file location")
 
     sources_p = sub.add_parser("sources", help="List registered sources")
     sources_p.add_argument(

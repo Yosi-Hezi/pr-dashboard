@@ -65,6 +65,7 @@ pr-dashboard refresh <id> | --all
 pr-dashboard add <url>                     # add PR by URL
 pr-dashboard remove <id>
 pr-dashboard clean                         # remove completed/abandoned
+pr-dashboard config                        # show config file location
 pr-dashboard sources [all]
 pr-dashboard register {ado|github|all} [org]
 pr-dashboard unregister <source>
@@ -72,7 +73,10 @@ pr-dashboard unregister <source>
 
 ## Configuration
 
-Config file location: `<platformdirs data dir>/pr-dashboard/config.json`
+Find your config file:
+```bash
+pr-dashboard config
+```
 
 ```json
 {
