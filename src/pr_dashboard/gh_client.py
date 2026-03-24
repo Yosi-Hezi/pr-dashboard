@@ -202,19 +202,29 @@ class GhClient:
         owner, repo = (
             owner_repo.split("/", 1) if "/" in owner_repo else (owner_repo, "")
         )
-        query = (
-            '{ repository(owner: "'
-            + owner
-            + '", name: "'
-            + repo
-            + '") { pullRequest(number: '
-            + str(number)
-            + ") { "
-            "reviewThreads(first: 100) { nodes { isResolved path line "
-            "comments(first: 50) { nodes { author { login } body "
-            "createdAt updatedAt } } } } } } }"
-        )
-        rc, stdout, stderr = await self._run(["api", "graphql", "-f", f"query={query}"])
+        query = """
+        query($owner: String!, $repo: String!, $number: Int!) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $number) {
+              reviewThreads(first: 100) {
+                nodes {
+                  isResolved path line
+                  comments(first: 50) {
+                    nodes { author { login } body createdAt updatedAt }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+        rc, stdout, stderr = await self._run([
+            "api", "graphql",
+            "-f", f"query={query}",
+            "-F", f"owner={owner}",
+            "-F", f"repo={repo}",
+            "-F", f"number={number}",
+        ])
         if rc != 0:
             log.debug(
                 "GraphQL reviewThreads failed for %s#%d: %s",

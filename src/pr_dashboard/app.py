@@ -1,7 +1,5 @@
 """PR Dashboard — interactive TUI for Azure DevOps pull requests."""
 
-from __future__ import annotations
-
 import asyncio
 import json
 import subprocess
@@ -525,7 +523,7 @@ class PRDashboard(App):
                 self.query_one("#pr-table", DataTable).focus()
                 event.prevent_default()
         elif event.key == "ctrl+r":
-            self.action_refresh_all()
+            # Legacy: prevent browser default. Binding system handles refresh_all.
             event.prevent_default()
 
     # ── View toggle ──────────────────────────────────────────────────────────

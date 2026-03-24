@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pr-dashboard"
-version = "0.3.0"
+version = "0.3.2"
 description = "Interactive TUI + CLI for Azure DevOps & GitHub pull request management"
 readme = "README.md"
 license = "MIT"
@@ -28,3 +28,11 @@ Repository = "https://github.com/Yosi-Hezi/pr-dashboard"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pr_dashboard"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

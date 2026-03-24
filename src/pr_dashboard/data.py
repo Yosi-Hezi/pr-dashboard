@@ -76,11 +76,20 @@ class PrDataStore:
         return self.load().get("prs", [])
 
     def save(self, data: dict) -> None:
-        """Write data to disk."""
+        """Write data to disk atomically (write tmp → rename)."""
         self.data_file.parent.mkdir(parents=True, exist_ok=True)
-        self.data_file.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", dir=self.data_file.parent, suffix=".tmp",
+            delete=False, encoding="utf-8",
         )
+        try:
+            tmp.write(json.dumps(data, indent=2, ensure_ascii=False))
+            tmp.close()
+            Path(tmp.name).replace(self.data_file)
+        except BaseException:
+            Path(tmp.name).unlink(missing_ok=True)
+            raise
         log.debug("Saved %d PRs to %s", len(data.get("prs", [])), self.data_file)
 
     def _upsert_pr(self, data: dict, entry: dict) -> None:
@@ -390,7 +399,7 @@ class PrDataStore:
             async def _refresh_one(pr: dict, client: AdoClient) -> dict:
                 try:
                     ado_pr = await client.get_pr(pr["id"])
-                    return await client.enrich_pr(ado_pr)
+                    return await client.enrich_pr(ado_pr, role=pr.get("role", "author"))
                 except (AdoApiError, AdoAuthError) as exc:
                     log.warning("Failed to refresh PR #%d: %s", pr["id"], exc)
                     return pr
