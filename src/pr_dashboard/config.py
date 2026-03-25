@@ -112,6 +112,7 @@ def load_config() -> dict:
         "keybindings": data.get("keybindings", {}),
         "theme": data.get("theme", "textual-dark"),
         "extensions": data.get("extensions", []),
+        "display": data.get("display", {}),
     }
 
 
@@ -189,6 +190,93 @@ def _validate_extensions(extensions: list) -> list[dict]:
         valid.append({"key": key, "name": ext["name"], "command": ext["command"]})
 
     return valid
+
+
+# ── Display configuration ────────────────────────────────────────────────
+
+COLUMN_DEFS: dict[str, dict] = {
+    "pin":      {"header": "★"},
+    "status":   {"header": "St"},
+    "author":   {"header": "Author"},
+    "repo":     {"header": "Repo"},
+    "id":       {"header": "ID"},
+    "title":    {"header": "Title"},
+    "my_vote":  {"header": "Me"},
+    "votes":    {"header": "Votes"},
+    "checks":   {"header": "Checks"},
+    "comments": {"header": "Cmts"},
+    "updated":  {"header": "Updated"},
+    "fetched":  {"header": "Fetched"},
+    "source":   {"header": "Src"},
+}
+
+DEFAULT_DISPLAY: dict = {
+    "columns": {
+        "mine": ["pin", "status", "author", "repo", "id", "title", "votes", "checks", "comments", "updated", "fetched"],
+        "reviews": ["pin", "status", "author", "repo", "id", "title", "my_vote", "votes", "checks", "comments", "updated", "fetched"],
+    },
+    "column_widths": {
+        "title": 50,
+        "author": 14,
+    },
+    "truncation_suffix": "..",
+    "row_colors": [
+        {"status": "Approved", "color": "#2d4a2d"},
+        {"status": "Completed", "color": "#2d3a4a"},
+        {"status": "Abandoned", "color": "#4a2d2d"},
+    ],
+}
+
+
+def get_display_config() -> dict:
+    """Return effective display config (defaults merged with user overrides)."""
+    config = load_config()
+    user_display = config.get("display", {})
+    if not isinstance(user_display, dict):
+        log.warning("config: display section is not an object, using defaults")
+        return dict(DEFAULT_DISPLAY)
+
+    result = {}
+
+    # Columns: merge per-view, validate column IDs
+    user_cols = user_display.get("columns", {})
+    result["columns"] = {}
+    for view in ("mine", "reviews"):
+        if view in user_cols and isinstance(user_cols[view], list):
+            valid = [c for c in user_cols[view] if c in COLUMN_DEFS]
+            invalid = [c for c in user_cols[view] if c not in COLUMN_DEFS]
+            if invalid:
+                log.warning("config: unknown column IDs in %s: %s", view, invalid)
+            result["columns"][view] = valid if valid else DEFAULT_DISPLAY["columns"][view]
+        else:
+            result["columns"][view] = DEFAULT_DISPLAY["columns"][view]
+
+    # Column widths
+    user_widths = user_display.get("column_widths", {})
+    result["column_widths"] = {**DEFAULT_DISPLAY["column_widths"]}
+    if isinstance(user_widths, dict):
+        for col, width in user_widths.items():
+            if isinstance(width, int) and width > 0:
+                result["column_widths"][col] = width
+
+    # Truncation suffix
+    suffix = user_display.get("truncation_suffix", DEFAULT_DISPLAY["truncation_suffix"])
+    result["truncation_suffix"] = suffix if isinstance(suffix, str) else DEFAULT_DISPLAY["truncation_suffix"]
+
+    # Row colors — list of rules
+    user_colors = user_display.get("row_colors")
+    if user_colors is not None and isinstance(user_colors, list):
+        valid_rules = []
+        for rule in user_colors:
+            if isinstance(rule, dict) and "color" in rule:
+                valid_rules.append(rule)
+            else:
+                log.warning("config: invalid row_color rule: %s", rule)
+        result["row_colors"] = valid_rules
+    else:
+        result["row_colors"] = list(DEFAULT_DISPLAY["row_colors"])
+
+    return result
 
 
 def get_extensions() -> list[dict]:

@@ -13,11 +13,11 @@ def pr_key(pr: dict) -> str:
     return f"{pr.get('source', '')}:{pr.get('id', 0)}"
 
 
-def truncate(text: str, max_len: int) -> str:
-    """Truncate text with '..' suffix if it exceeds max_len."""
+def truncate(text: str, max_len: int, suffix: str = "..") -> str:
+    """Truncate text with suffix if it exceeds max_len."""
     if len(text) <= max_len:
         return text
-    return text[: max_len - 2] + ".."
+    return text[: max_len - len(suffix)] + suffix
 
 
 def esc(text: str) -> str:
@@ -198,24 +198,30 @@ def format_status_label(status: str, pr: dict | None = None) -> str:
     return f"{symbol} {label}"
 
 
-# Row background styles — dark pastels for state-based coloring
-_ROW_STYLES: dict[str, Style] = {
-    "approved": Style(bgcolor="#2d4a2d"),
-    "completed": Style(bgcolor="#2d3a4a"),
-    "abandoned": Style(bgcolor="#4a2d2d"),
-}
+def pr_row_style(pr: dict, rules: list[dict] | None = None) -> Style | None:
+    """Return row background style based on configurable rules.
 
+    Each rule: optional 'status' (derived label), optional 'mergeStatus', required 'color'.
+    Missing fields = wildcard. First matching rule wins.
+    """
+    if rules is None:
+        from .config import DEFAULT_DISPLAY
+        rules = DEFAULT_DISPLAY["row_colors"]
 
-def pr_row_style(pr: dict) -> Style | None:
-    """Return row background style based on PR state, or None for default."""
     status = pr.get("status", "")
     _, label = _derive_status(status, pr)
-    if label == "Approved":
-        return _ROW_STYLES["approved"]
-    if status == "completed":
-        return _ROW_STYLES["completed"]
-    if status == "abandoned":
-        return _ROW_STYLES["abandoned"]
+    merge_status = pr.get("mergeStatus", "")
+
+    for rule in rules:
+        rule_status = rule.get("status", "")
+        rule_merge = rule.get("mergeStatus", "")
+        if rule_status and rule_status != label:
+            continue
+        if rule_merge and rule_merge != merge_status:
+            continue
+        color = rule.get("color", "")
+        if color:
+            return Style(bgcolor=color)
     return None
 
 
@@ -236,6 +242,47 @@ def source_label(source: str) -> str:
 def format_pin(pr: dict) -> str:
     """Return ★ for pinned PRs, empty string otherwise."""
     return "★" if pr.get("pinned") else ""
+
+
+def get_cell_value(col_id: str, pr: dict, *, is_reviews: bool = False, display: dict | None = None) -> str:
+    """Get formatted cell value for a column ID."""
+    if display is None:
+        from .config import DEFAULT_DISPLAY
+        display = DEFAULT_DISPLAY
+    widths = display.get("column_widths", {})
+    suffix = display.get("truncation_suffix", "..")
+
+    match col_id:
+        case "pin":
+            return format_pin(pr)
+        case "status":
+            return format_status(pr.get("status", ""), pr)
+        case "author":
+            return truncate(pr.get("author", ""), widths.get("author", 14), suffix)
+        case "repo":
+            return shorten_repo(pr.get("repoName", ""))
+        case "id":
+            return str(pr.get("id", ""))
+        case "title":
+            return truncate(pr.get("title", ""), widths.get("title", 50), suffix)
+        case "my_vote":
+            return format_my_vote(pr.get("myVote", ""), pr.get("isRequiredReviewer", False))
+        case "votes":
+            if is_reviews:
+                return format_reviews(pr.get("reviews", []), exclude_vote=pr.get("myVote", ""))
+            return format_reviews(pr.get("reviews", []))
+        case "checks":
+            return format_checks(pr)
+        case "comments":
+            return format_comments(pr)
+        case "updated":
+            return format_time_ago(pr.get("lastUpdated"))
+        case "fetched":
+            return format_time_ago(pr.get("lastLoaded"))
+        case "source":
+            return format_source(pr.get("source", ""))
+        case _:
+            return ""
 
 
 def sort_prs(prs: list[dict]) -> list[dict]:

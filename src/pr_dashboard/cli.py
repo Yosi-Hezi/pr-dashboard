@@ -9,6 +9,7 @@ import sys
 
 from .ado_client import AdoApiError, AdoAuthError
 from .cli_sources import cmd_register, cmd_sources, cmd_unregister
+from .config import COLUMN_DEFS, get_display_config
 from .data import PrDataStore
 from .formatting import (
     VOTE_EMOJI,
@@ -22,6 +23,7 @@ from .formatting import (
     format_status_label,
     format_source,
     format_time_ago,
+    get_cell_value,
     shorten_repo,
     sort_prs,
     truncate,
@@ -38,56 +40,20 @@ def _pr_table(
     prs: list[dict], title: str | None = None, role: str = ""
 ) -> Table:
     """Build a rich Table from a list of PR dicts."""
+    display = get_display_config()
     prs = sort_prs(prs)
     is_reviews = role == "reviewer"
+    view = "reviews" if is_reviews else "mine"
+    columns = display.get("columns", {}).get(view, [])
+
     table = Table(title=title, show_lines=False, pad_edge=False)
-    table.add_column("★", width=2)
-    table.add_column("St", width=4)
-    table.add_column("Src", max_width=12)
-    table.add_column("ID", style="dim")
-    table.add_column("Title", max_width=50)
-    table.add_column("Author", max_width=18)
-    table.add_column("Repo", max_width=20)
-    if is_reviews:
-        table.add_column("Me", width=4)
-    table.add_column("Votes")
-    table.add_column("Checks")
-    table.add_column("Cmts")
-    table.add_column("Updated")
+    for col in columns:
+        col_def = COLUMN_DEFS.get(col, {})
+        header = col_def.get("header", col)
+        table.add_column(header)
+
     for pr in prs:
-        title_str = truncate(pr.get("title", ""), 50)
-        author = truncate(pr.get("author", ""), 14)
-        row: list[str] = [
-            format_pin(pr),
-            format_status(pr.get("status", ""), pr),
-            format_source(pr.get("source", "")),
-            str(pr.get("id", "")),
-            title_str,
-            author,
-            shorten_repo(pr.get("repoName", "")),
-        ]
-        if is_reviews:
-            row.append(
-                format_my_vote(
-                    pr.get("myVote", ""),
-                    pr.get("isRequiredReviewer", False),
-                )
-            )
-            row.append(
-                format_reviews(
-                    pr.get("reviews", []),
-                    exclude_vote=pr.get("myVote", ""),
-                )
-            )
-        else:
-            row.append(format_reviews(pr.get("reviews", [])))
-        row.extend(
-            [
-                format_checks(pr),
-                format_comments(pr),
-                format_time_ago(pr.get("lastUpdated")),
-            ]
-        )
+        row = [get_cell_value(c, pr, is_reviews=is_reviews, display=display) for c in columns]
         table.add_row(*row)
     return table
 

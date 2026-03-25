@@ -9,10 +9,12 @@ from pr_dashboard.formatting import (
     format_pin,
     format_reviews,
     format_time_ago,
+    get_cell_value,
     pr_matches_filter,
     pr_row_style,
     shorten_repo,
     sort_prs,
+    truncate,
 )
 
 
@@ -269,3 +271,67 @@ class TestPrRowStyle:
     def test_draft_pr_no_style(self):
         pr = {"status": "active", "isDraft": True, "reviews": []}
         assert pr_row_style(pr) is None
+
+
+# ── truncate with suffix ─────────────────────────────────────────
+
+
+class TestTruncateWithSuffix:
+    def test_default_suffix(self):
+        assert truncate("hello world", 8) == "hello .."
+
+    def test_custom_suffix(self):
+        assert truncate("hello world", 8, "…") == "hello w…"
+
+    def test_no_truncation(self):
+        assert truncate("hi", 10, "...") == "hi"
+
+
+# ── pr_row_style configurable ───────────────────────────────────
+
+
+class TestPrRowStyleConfigurable:
+    def test_custom_rules(self):
+        rules = [{"status": "Draft", "color": "#112233"}]
+        pr = {"status": "active", "isDraft": True, "reviews": []}
+        style = pr_row_style(pr, rules=rules)
+        assert style is not None
+        assert style.bgcolor.name == "#112233"
+
+    def test_merge_status_rule(self):
+        rules = [{"mergeStatus": "conflicts", "color": "#443322"}]
+        pr = {"status": "active", "mergeStatus": "conflicts", "reviews": []}
+        style = pr_row_style(pr, rules=rules)
+        assert style is not None
+
+    def test_wildcard_status(self):
+        rules = [{"color": "#111111"}]
+        pr = {"status": "active", "reviews": []}
+        style = pr_row_style(pr, rules=rules)
+        assert style is not None
+
+    def test_no_match(self):
+        rules = [{"status": "Completed", "color": "#aabbcc"}]
+        pr = {"status": "active", "reviews": []}
+        assert pr_row_style(pr, rules=rules) is None
+
+    def test_empty_rules(self):
+        assert pr_row_style({"status": "active", "reviews": []}, rules=[]) is None
+
+
+# ── get_cell_value ───────────────────────────────────────────────
+
+
+class TestGetCellValue:
+    def test_pin_column(self):
+        assert get_cell_value("pin", {"pinned": True}) == "★"
+        assert get_cell_value("pin", {}) == ""
+
+    def test_title_with_custom_width(self):
+        display = {"column_widths": {"title": 10}, "truncation_suffix": "…"}
+        val = get_cell_value("title", {"title": "A very long title here"}, display=display)
+        assert len(val) == 10
+        assert val.endswith("…")
+
+    def test_unknown_column(self):
+        assert get_cell_value("nonexistent", {}) == ""

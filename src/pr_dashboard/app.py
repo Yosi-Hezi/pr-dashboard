@@ -8,7 +8,7 @@ import webbrowser
 from pathlib import Path
 
 from .ado_client import AdoApiError, AdoAuthError, AdoClient
-from .config import get_extensions, get_keybindings, load_config
+from .config import COLUMN_DEFS, get_display_config, get_extensions, get_keybindings, load_config
 from .data import PrDataStore
 from .formatting import (
     VOTE_EMOJI,
@@ -21,6 +21,7 @@ from .formatting import (
     format_status,
     format_status_label,
     format_time_ago,
+    get_cell_value,
     pr_key,
     pr_matches_filter,
     pr_row_style,
@@ -33,6 +34,7 @@ from .logger import get_logger
 from .screens import HelpScreen, InfoScreen, LogScreen, PeekScreen
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.coordinate import Coordinate
 from textual.events import Key
 from textual.widgets import DataTable, Footer, Header, Input, Static
 
@@ -165,6 +167,7 @@ class PRDashboard(App):
         self._removing_prs: set[str] = set()
         self._az_user: str | None = None
         self._gh_user: str | None = None
+        self._display = get_display_config()
 
         # Store extensions for help screen
         self._extensions = get_extensions()
@@ -195,16 +198,19 @@ class PRDashboard(App):
         # Check auth status + first-run auto-discover
         self.run_worker(self._init_auth_and_sync())
 
+    def _get_columns(self) -> list[str]:
+        """Get column IDs for current view mode from display config."""
+        view = "reviews" if self._view_mode == "reviews" else "mine"
+        return self._display.get("columns", {}).get(view, [])
+
     def _setup_table_columns(self) -> None:
         """Set up table columns based on current view mode."""
         table = self.query_one("#pr-table", StyledDataTable)
         table.clear(columns=True)
         table.set_row_styles({})
-        cols = ["★", "St", "Author", "Repo", "ID", "Title"]
-        if self._view_mode == "reviews":
-            cols.append("Me")
-        cols.extend(["Votes", "Checks", "Cmts", "Updated", "Fetched"])
-        table.add_columns(*cols)
+        columns = self._get_columns()
+        headers = [COLUMN_DEFS.get(c, {}).get("header", c) for c in columns]
+        table.add_columns(*headers)
 
     async def _init_auth_and_sync(self) -> None:
         """Check auth status and auto-discover on first run."""
@@ -345,47 +351,15 @@ class PRDashboard(App):
         prev_row = table.cursor_row
         self._setup_table_columns()
         visible = self.get_visible_prs()
+        columns = self._get_columns()
         is_reviews = self._view_mode == "reviews"
+        row_colors = self._display.get("row_colors", [])
         row_styles: dict[int, object] = {}
         for idx, pr in enumerate(visible):
-            title = truncate(pr.get("title", ""), 50)
-            author = truncate(pr.get("author", ""), 14)
-            pr_id = pr.get("id")
             row_key = pr_key(pr)
-
-            row_data = [
-                format_pin(pr),
-                format_status(pr.get("status", ""), pr),
-                author,
-                shorten_repo(pr.get("repoName", "")),
-                str(pr_id),
-                title,
-            ]
-            if is_reviews:
-                row_data.append(
-                    format_my_vote(
-                        pr.get("myVote", ""),
-                        pr.get("isRequiredReviewer", False),
-                    )
-                )
-                row_data.append(
-                    format_reviews(
-                        pr.get("reviews", []),
-                        exclude_vote=pr.get("myVote", ""),
-                    )
-                )
-            else:
-                row_data.append(format_reviews(pr.get("reviews", [])))
-            row_data.extend(
-                [
-                    format_checks(pr),
-                    format_comments(pr),
-                    format_time_ago(pr.get("lastUpdated")),
-                    format_time_ago(pr.get("lastLoaded")),
-                ]
-            )
+            row_data = [get_cell_value(c, pr, is_reviews=is_reviews, display=self._display) for c in columns]
             table.add_row(*row_data, key=row_key)
-            style = pr_row_style(pr)
+            style = pr_row_style(pr, rules=row_colors)
             if style:
                 row_styles[idx] = style
         table.set_row_styles(row_styles)
@@ -595,6 +569,10 @@ class PRDashboard(App):
         elif event.key == "ctrl+r":
             # Legacy: prevent browser default. Binding system handles refresh_all.
             event.prevent_default()
+        elif event.key in ("P", "shift+p"):
+            if not filter_input.has_class("visible"):
+                self.action_toggle_filter_pinned()
+                event.prevent_default()
 
     # ── View toggle ──────────────────────────────────────────────────────────
 
@@ -752,17 +730,19 @@ class PRDashboard(App):
             return
         pr_id = pr["id"]
         source = pr.get("source", "")
-        # Update in-memory immediately for snappy feedback
         new_state = not pr.get("pinned", False)
         pr["pinned"] = new_state
-        self.refresh_table()
+        # Update just the ★ cell — no full rebuild
+        table = self.query_one("#pr-table", StyledDataTable)
+        columns = self._get_columns()
+        if "pin" in columns:
+            pin_col_idx = columns.index("pin")
+            table.update_cell_at(
+                Coordinate(table.cursor_row, pin_col_idx), format_pin(pr)
+            )
+        self.store.toggle_pin(pr_id, source=source)
         verb = "Pinned" if new_state else "Unpinned"
         self.notify(f"{verb} PR #{pr_id}", timeout=3)
-        # Persist to disk in background
-        self.run_worker(self._save_pin(pr_id, source))
-
-    async def _save_pin(self, pr_id: int, source: str) -> None:
-        self.store.toggle_pin(pr_id, source=source)
 
     def action_toggle_filter_pinned(self) -> None:
         self._filter_pinned = not self._filter_pinned

@@ -10,7 +10,9 @@ from pr_dashboard.config import (
     _validate_extensions,
     _validate_key,
     _validate_keybindings,
+    get_display_config,
     get_keybindings,
+    DEFAULT_DISPLAY,
 )
 
 LOGGER_NAME = "pr-dashboard"
@@ -122,3 +124,26 @@ class TestGetKeybindings:
         monkeypatch.setattr(config, "CONFIG_FILE", fake_config)
         result = get_keybindings()
         assert result == DEFAULT_KEYBINDINGS
+
+
+# ── get_display_config ──────────────────────────────────────────
+
+
+class TestGetDisplayConfig:
+    def test_defaults_no_config(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("pr_dashboard.config.CONFIG_FILE", tmp_path / "nope.json")
+        cfg = get_display_config()
+        assert cfg["columns"] == DEFAULT_DISPLAY["columns"]
+        assert cfg["truncation_suffix"] == ".."
+
+    def test_invalid_column_ids_filtered(self, tmp_path, monkeypatch):
+        import json
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps({
+            "display": {"columns": {"mine": ["pin", "bogus", "title"]}}
+        }))
+        monkeypatch.setattr("pr_dashboard.config.CONFIG_FILE", config_file)
+        cfg = get_display_config()
+        assert "bogus" not in cfg["columns"]["mine"]
+        assert "pin" in cfg["columns"]["mine"]
+        assert "title" in cfg["columns"]["mine"]
