@@ -16,6 +16,7 @@ from .formatting import (
     format_checks,
     format_comments,
     format_my_vote,
+    format_pin,
     format_reviews,
     format_status,
     format_status_label,
@@ -92,6 +93,7 @@ class PRDashboard(App):
         "main.info": ("Info", True, False),
         "main.log": ("Log", False, False),
         "main.peek": ("Peek", True, False),
+        "main.pin": ("Pin", True, False),
         "main.quit": ("Exit", True, False),
     }
 
@@ -110,6 +112,7 @@ class PRDashboard(App):
         "main.info": "show_info",
         "main.log": "show_log",
         "main.peek": "peek_selected",
+        "main.pin": "toggle_pin",
         "main.quit": "quit",
     }
 
@@ -175,7 +178,7 @@ class PRDashboard(App):
         """Set up table columns based on current view mode."""
         table = self.query_one("#pr-table", DataTable)
         table.clear(columns=True)
-        cols = ["St", "Author", "Repo", "ID", "Title"]
+        cols = ["★", "St", "Author", "Repo", "ID", "Title"]
         if self._view_mode == "reviews":
             cols.append("Me")
         cols.extend(["Votes", "Checks", "Cmts", "Updated", "Fetched"])
@@ -290,6 +293,7 @@ class PRDashboard(App):
             row_key = pr_key(pr)
 
             row_data = [
+                format_pin(pr),
                 format_status(pr.get("status", ""), pr),
                 author,
                 shorten_repo(pr.get("repoName", "")),
@@ -411,8 +415,9 @@ class PRDashboard(App):
         source_branch = esc(pr.get("sourceBranch", "?"))
         target = esc(pr.get("targetBranch", "?"))
         repo_at_src = f"{esc(shorten_repo(pr.get('repoName', '')))} @ {src}"
+        pin_indicator = "★ " if pr.get("pinned") else ""
         parts.append(
-            f"{status_text} [bold]#{pr['id']}[/]  "
+            f"{pin_indicator}{status_text} [bold]#{pr['id']}[/]  "
             f"[dim]{target}[/] ← [cyan]{source_branch}[/]   "
             f"[dim]{repo_at_src}[/]"
         )
@@ -673,6 +678,22 @@ class PRDashboard(App):
         if not pr:
             return
         self.push_screen(PeekScreen(pr))
+
+    # ── Pin/Unpin ─────────────────────────────────────────────────────────
+
+    def action_toggle_pin(self) -> None:
+        pr = self.get_selected_pr()
+        if not pr:
+            return
+        pr_id = pr["id"]
+        source = pr.get("source", "")
+        new_state = self.store.toggle_pin(pr_id, source=source)
+        if new_state is None:
+            self.notify(f"PR #{pr_id} not found", severity="warning", timeout=3)
+            return
+        verb = "Pinned" if new_state else "Unpinned"
+        self.load_and_display()
+        self.notify(f"{verb} PR #{pr_id}", timeout=3)
 
 
 # Register extension action methods at class level so Textual finds them

@@ -6,6 +6,7 @@ import pytest
 
 from pr_dashboard.formatting import (
     _derive_status,
+    format_pin,
     format_reviews,
     format_time_ago,
     pr_matches_filter,
@@ -189,3 +190,53 @@ class TestSortPrs:
         # More recent first within same repo
         assert result[0]["lastUpdated"] > result[1]["lastUpdated"]
         assert result[2]["repoName"] == "BBB"
+
+    def test_pinned_prs_sort_first(self):
+        prs = [
+            {"repoName": "ZZZ", "lastUpdated": "2025-01-01T00:00:00+00:00", "pinned": True},
+            {"repoName": "AAA", "lastUpdated": "2025-01-02T00:00:00+00:00"},
+            {"repoName": "BBB", "lastUpdated": "2025-01-01T00:00:00+00:00"},
+        ]
+        result = sort_prs(prs)
+        # Pinned PR comes first despite repo name ZZZ
+        assert result[0].get("pinned") is True
+        assert result[0]["repoName"] == "ZZZ"
+        # Unpinned follow normal sort order
+        assert result[1]["repoName"] == "AAA"
+        assert result[2]["repoName"] == "BBB"
+
+    def test_pinned_prs_sorted_among_themselves(self):
+        prs = [
+            {"repoName": "BBB", "lastUpdated": "2025-01-01T00:00:00+00:00", "pinned": True},
+            {"repoName": "AAA", "lastUpdated": "2025-01-02T00:00:00+00:00", "pinned": True},
+            {"repoName": "CCC", "lastUpdated": "2025-01-01T00:00:00+00:00"},
+        ]
+        result = sort_prs(prs)
+        # Both pinned come first, sorted by repo
+        assert result[0]["repoName"] == "AAA"
+        assert result[1]["repoName"] == "BBB"
+        assert result[2]["repoName"] == "CCC"
+
+    def test_unpinned_pr_not_affected(self):
+        prs = [
+            {"repoName": "AAA", "lastUpdated": "2025-01-01T00:00:00+00:00", "pinned": False},
+            {"repoName": "BBB", "lastUpdated": "2025-01-01T00:00:00+00:00"},
+        ]
+        result = sort_prs(prs)
+        # pinned=False is same as not pinned
+        assert result[0]["repoName"] == "AAA"
+        assert result[1]["repoName"] == "BBB"
+
+
+# ── format_pin ───────────────────────────────────────────────────
+
+
+class TestFormatPin:
+    def test_pinned_pr(self):
+        assert format_pin({"pinned": True}) == "★"
+
+    def test_unpinned_pr(self):
+        assert format_pin({"pinned": False}) == ""
+
+    def test_no_pinned_field(self):
+        assert format_pin({}) == ""

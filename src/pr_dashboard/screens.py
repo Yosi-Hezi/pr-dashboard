@@ -48,6 +48,7 @@ _ACTION_DESCRIPTIONS: dict[str, str] = {
     "main.info": "View connected sources & accounts",
     "main.log": "View activity log",
     "main.peek": "Peek at PR description & comments",
+    "main.pin": "Pin/unpin selected PR",
     "main.quit": "Exit",
 }
 
@@ -114,7 +115,8 @@ class HelpScreen(ModalScreen):
                 "[dim]Votes:    ✓ Approved   ↻ Changes requested   ✗ Rejected   ! Required pending[/]\n"
                 "[dim]Checks:   ✓ Pass   ✗ Required fail   ~ Optional fail[/]\n"
                 "[dim]Comments: ✓ All resolved   💬 Unresolved threads[/]\n"
-                "[dim]Me:       Your vote (Reviews view only)[/]\n\n"
+                "[dim]Me:       Your vote (Reviews view only)[/]\n"
+                "[dim]Pin:      ★ Pinned (sorted to top)[/]\n\n"
                 f"[dim]Logs: {LOG_DIR}[/]"
             )
 

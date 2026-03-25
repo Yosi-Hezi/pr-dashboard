@@ -16,6 +16,7 @@ from .formatting import (
     format_checks,
     format_comments,
     format_my_vote,
+    format_pin,
     format_reviews,
     format_status,
     format_status_label,
@@ -40,6 +41,7 @@ def _pr_table(
     prs = sort_prs(prs)
     is_reviews = role == "reviewer"
     table = Table(title=title, show_lines=False, pad_edge=False)
+    table.add_column("★", width=2)
     table.add_column("St", width=4)
     table.add_column("Src", max_width=12)
     table.add_column("ID", style="dim")
@@ -56,6 +58,7 @@ def _pr_table(
         title_str = truncate(pr.get("title", ""), 50)
         author = truncate(pr.get("author", ""), 14)
         row: list[str] = [
+            format_pin(pr),
             format_status(pr.get("status", ""), pr),
             format_source(pr.get("source", "")),
             str(pr.get("id", "")),

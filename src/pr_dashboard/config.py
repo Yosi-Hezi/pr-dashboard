@@ -29,6 +29,7 @@ DEFAULT_KEYBINDINGS: dict[str, str] = {
     "main.info": "i",
     "main.log": "l",
     "main.peek": "v",
+    "main.pin": "p",
     "main.quit": "ctrl+c",
 }
 
