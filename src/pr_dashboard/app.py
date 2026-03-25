@@ -569,7 +569,7 @@ class PRDashboard(App):
         elif event.key == "ctrl+r":
             # Legacy: prevent browser default. Binding system handles refresh_all.
             event.prevent_default()
-        elif event.key in ("P", "shift+p"):
+        elif event.key == "ctrl+p":
             if not filter_input.has_class("visible"):
                 self.action_toggle_filter_pinned()
                 event.prevent_default()
