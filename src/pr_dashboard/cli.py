@@ -443,7 +443,7 @@ def main() -> None:
         prog="pr-dashboard", description="Azure DevOps PR Dashboard CLI"
     )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("sync", help="Fetch PRs from all registered sources")
     list_p = sub.add_parser("list", help="List tracked PRs (local data)")
@@ -499,6 +499,12 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    if args.command is None:
+        from .app import PRDashboard
+
+        PRDashboard().run()
+        return
 
     # Handle `sources all` positional argument
     if args.command == "sources" and args.all == "all":
