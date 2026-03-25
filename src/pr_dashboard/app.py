@@ -228,6 +228,7 @@ class PRDashboard(App):
 
         # Sync if no PRs loaded — reuse authenticated clients
         if not self.prs and sources:
+            self._refreshing_all = True
             self.notify(f"Syncing {len(sources)} source(s)...", timeout=10)
             log.info("Startup: syncing %d sources", len(sources))
             try:
@@ -248,9 +249,15 @@ class PRDashboard(App):
                 self._handle_error(exc, "Sync")
             finally:
                 self._refreshing_all = False
-            self.load_and_display()
-            self.notify(f"Ready — {len(self.prs)} PRs loaded", timeout=3)
-            log.info("Startup: complete, %d PRs loaded", len(self.prs))
+
+            # Schedule UI update on the main message loop so the screen
+            # repaints even though no user event initiated this worker.
+            def _finish_startup():
+                self.load_and_display()
+                self.notify(f"Ready — {len(self.prs)} PRs loaded", timeout=3)
+                log.info("Startup: complete, %d PRs loaded", len(self.prs))
+
+            self.call_later(_finish_startup)
         else:
             log.info("Startup: %d cached PRs, skipping sync", len(self.prs))
 
