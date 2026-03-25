@@ -30,6 +30,9 @@ DEFAULT_KEYBINDINGS: dict[str, str] = {
     "main.peek": "v",
     "main.pin": "f",
     "main.filter_pinned": "ctrl+f",
+    "main.add_pr": "a",
+    "main.manage_sources": "ctrl+m",
+    "main.manage_repos": "m",
     "main.quit": "ctrl+c",
 }
 
@@ -237,6 +240,9 @@ ACTION_DEFS: dict[str, tuple[str, str, bool]] = {
     "main.peek": ("Peek", "peek_selected", False),
     "main.pin": ("Pin", "toggle_pin", False),
     "main.filter_pinned": ("★ Filter", "toggle_filter_pinned", False),
+    "main.add_pr": ("Add PR", "add_pr", False),
+    "main.manage_sources": ("Sources", "manage_sources", False),
+    "main.manage_repos": ("Repos", "manage_repos", False),
     "main.quit": ("Exit", "quit", False),
 }
 

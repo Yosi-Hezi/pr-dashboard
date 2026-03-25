@@ -135,8 +135,9 @@ class TestFormatReviews:
         ]
         result_without = format_reviews(reviews, exclude_vote="Approved")
         result_with = format_reviews(reviews)
-        # One fewer approval symbol when excluding
-        assert result_without.count("✓") == result_with.count("✓") - 1
+        # Two approvals grouped = "✓2", excluding one = "✓"
+        assert result_with == "✓2"
+        assert result_without == "✓"
 
 
 # ── pr_matches_filter ────────────────────────────────────────────

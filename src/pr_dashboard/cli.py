@@ -8,7 +8,14 @@ import json
 import sys
 
 from .ado_client import AdoApiError, AdoAuthError
-from .cli_sources import cmd_register, cmd_sources, cmd_unregister
+from .cli_sources import (
+    cmd_repos,
+    cmd_repos_exclude,
+    cmd_repos_include,
+    cmd_sources,
+    cmd_sources_exclude,
+    cmd_sources_include,
+)
 from .config import COLUMN_DEFS, get_display_config
 from .data import PrDataStore
 from .formatting import (
@@ -179,20 +186,18 @@ def _pr_url_table(prs: list[dict], title: str | None = None) -> Table:
 
 
 async def cmd_sync(store: PrDataStore, as_json: bool) -> None:
-    sources = store.get_sources()
-    if not sources:
-        console.print(
-            "[yellow]No sources registered. Run 'register all' or 'register ado <org>'.[/]"
-        )
-        return
-    console.print(
-        f"[dim]Syncing PRs from {len(sources)} source(s)...[/]", highlight=False
-    )
+    console.print("[dim]Discovering sources and syncing PRs...[/]", highlight=False)
     prs = await store.sync()
     if as_json:
         print(json.dumps(prs, indent=2, ensure_ascii=False))
     else:
-        console.print(_pr_table(prs, title=f"Synced {len(prs)} PR(s)"))
+        sources = store.get_active_sources()
+        console.print(
+            _pr_table(
+                prs,
+                title=f"Synced {len(prs)} PR(s) from {len(sources)} source(s)",
+            )
+        )
 
 
 async def cmd_list(
@@ -216,10 +221,12 @@ async def cmd_list(
 async def cmd_add(store: PrDataStore, url: str, as_json: bool) -> None:
     console.print(f"[dim]Adding PR from {url}...[/]", highlight=False)
     try:
-        entry = await store.add_pr_by_url(url)
+        entry, existed = await store.add_pr_by_url(url)
     except ValueError as exc:
         console.print(f"[red]{exc}[/]", highlight=False)
         sys.exit(1)
+    verb = "Updated" if existed else "Added"
+    console.print(f"[green]{verb} PR #{entry.get('id', '?')}[/]")
     if as_json:
         print(json.dumps(entry, indent=2, ensure_ascii=False))
     else:
@@ -307,29 +314,18 @@ async def cmd_clean(store: PrDataStore) -> None:
     console.print(f"Cleaned {removed} non-active PR(s).")
 
 
-async def cmd_exclude(store: PrDataStore, repo: str) -> None:
-    if store.exclude_repo(repo):
-        console.print(f"Excluded [bold]{repo}[/] from CR sync.")
+async def cmd_exclude(store: PrDataStore, source: str, repo: str) -> None:
+    if store.exclude_repo(source, repo):
+        console.print(f"Excluded [bold]{source} :: {repo}[/] from sync.")
     else:
-        console.print(f"[yellow]{repo} is already excluded.[/]", highlight=False)
+        console.print(f"[dim]{source} :: {repo} already excluded.[/]", highlight=False)
 
 
-async def cmd_include(store: PrDataStore, repo: str) -> None:
-    if store.include_repo(repo):
-        console.print(f"Included [bold]{repo}[/] back in CR sync.")
+async def cmd_include(store: PrDataStore, source: str, repo: str) -> None:
+    if store.include_repo(source, repo):
+        console.print(f"Included [bold]{source} :: {repo}[/] in sync.")
     else:
-        console.print(f"[red]{repo} is not excluded.[/]", highlight=False)
-        sys.exit(1)
-
-
-async def cmd_excluded(store: PrDataStore) -> None:
-    excluded = store.get_excluded_repos()
-    if not excluded:
-        console.print("[dim]No repos excluded. All repos are included in CR sync.[/]")
-        return
-    console.print(f"[bold]{len(excluded)} excluded repo(s):[/]")
-    for repo in sorted(excluded):
-        console.print(f"  • {repo}")
+        console.print(f"[dim]{source} :: {repo} already included.[/]", highlight=False)
 
 
 async def cmd_config() -> None:
@@ -381,21 +377,39 @@ async def run(args: argparse.Namespace) -> None:
             case "add":
                 await cmd_add(store, args.url, as_json)
             case "exclude":
-                await cmd_exclude(store, args.repo)
+                await cmd_exclude(store, args.source, args.repo)
             case "include":
-                await cmd_include(store, args.repo)
-            case "excluded":
-                await cmd_excluded(store)
+                await cmd_include(store, args.source, args.repo)
             case "config":
                 await cmd_config()
             case "sources":
-                await cmd_sources(store, show_all=getattr(args, "all", False))
-            case "register":
-                await cmd_register(
-                    store, args.source_type, org=getattr(args, "org", None)
-                )
-            case "unregister":
-                await cmd_unregister(store, args.source)
+                action = getattr(args, "action", None)
+                if action == "include":
+                    if not args.source:
+                        console.print("[red]Usage: sources include <source>[/]")
+                        sys.exit(1)
+                    await cmd_sources_include(store, args.source)
+                elif action == "exclude":
+                    if not args.source:
+                        console.print("[red]Usage: sources exclude <source>[/]")
+                        sys.exit(1)
+                    await cmd_sources_exclude(store, args.source)
+                else:
+                    await cmd_sources(store)
+            case "repos":
+                action = getattr(args, "action", None)
+                if action == "include":
+                    if not args.source or not args.repo:
+                        console.print("[red]Usage: repos include <source> <repo>[/]")
+                        sys.exit(1)
+                    await cmd_repos_include(store, args.source, args.repo)
+                elif action == "exclude":
+                    if not args.source or not args.repo:
+                        console.print("[red]Usage: repos exclude <source> <repo>[/]")
+                        sys.exit(1)
+                    await cmd_repos_exclude(store, args.source, args.repo)
+                else:
+                    await cmd_repos(store)
     except AdoAuthError as exc:
         log.error("Auth error: %s", exc)
         console.print(f"[red]Authentication failed:[/] {exc}")
@@ -438,33 +452,37 @@ def main() -> None:
     add_p.add_argument("url", help="PR URL to add")
 
     exclude_p = sub.add_parser(
-        "exclude", help="Exclude a repo from CR sync (reviews only)"
+        "exclude", help="Exclude a repo from sync (source + repo)"
     )
+    exclude_p.add_argument("source", help="Source (e.g., ado/msazure, github)")
     exclude_p.add_argument("repo", help="Repo name to exclude")
 
-    include_p = sub.add_parser("include", help="Re-include an excluded repo in CR sync")
+    include_p = sub.add_parser("include", help="Include a repo in sync (source + repo)")
+    include_p.add_argument("source", help="Source (e.g., ado/msazure, github)")
     include_p.add_argument("repo", help="Repo name to include")
 
-    sub.add_parser("excluded", help="List excluded repos")
     sub.add_parser("config", help="Show config file location")
 
-    sources_p = sub.add_parser("sources", help="List registered sources")
+    sources_p = sub.add_parser("sources", help="List/manage sources")
     sources_p.add_argument(
-        "all", nargs="?", default=None, help="Show all discoverable sources"
+        "action",
+        nargs="?",
+        choices=["include", "exclude"],
+        help="Action: include or exclude",
+    )
+    sources_p.add_argument(
+        "source", nargs="?", help="Source (e.g., ado/msazure, github)"
     )
 
-    register_p = sub.add_parser(
-        "register", help="Register a source (ado <org>, github, or all)"
+    repos_p = sub.add_parser("repos", help="List/manage repos")
+    repos_p.add_argument(
+        "action",
+        nargs="?",
+        choices=["include", "exclude"],
+        help="Action: include or exclude",
     )
-    register_p.add_argument(
-        "source_type", choices=["ado", "github", "all"], help="Source type"
-    )
-    register_p.add_argument("org", nargs="?", help="ADO org name (for 'ado' type)")
-
-    unregister_p = sub.add_parser("unregister", help="Unregister a source")
-    unregister_p.add_argument(
-        "source", help="Source to remove (e.g., ado/msazure, github)"
-    )
+    repos_p.add_argument("source", nargs="?", help="Source (e.g., ado/msazure, github)")
+    repos_p.add_argument("repo", nargs="?", help="Repo name")
 
     args = parser.parse_args()
 
@@ -473,12 +491,6 @@ def main() -> None:
 
         PRDashboard().run()
         return
-
-    # Handle `sources all` positional argument
-    if args.command == "sources" and args.all == "all":
-        args.all = True
-    elif args.command == "sources":
-        args.all = False
 
     asyncio.run(run(args))
 

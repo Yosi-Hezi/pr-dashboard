@@ -224,7 +224,7 @@ class AdoClient:
         seen: dict[tuple[str, bool], dict] = {}
         for e in evaluated:
             cfg = e.get("configuration", {})
-            type_name = cfg.get("type", {}).get("displayName", "Unknown check")
+            type_name = (cfg.get("type") or {}).get("displayName", "Unknown check")
 
             # Skip process policies (shown separately by ADO, not as checks)
             if type_name in _process_policies:
@@ -293,10 +293,8 @@ class AdoClient:
             if t.get("isDeleted"):
                 continue
             thread_type = (
-                t.get("properties", {})
-                .get("CodeReviewThreadType", {})
-                .get("$value", "")
-            )
+                (t.get("properties") or {}).get("CodeReviewThreadType") or {}
+            ).get("$value", "")
             if not thread_type:
                 user_threads.append(t)
 
@@ -391,10 +389,10 @@ class AdoClient:
         _, user_email = await self.get_current_user()
         pr_id = ado_pr["pullRequestId"]
         repo_id = ado_pr["repository"]["id"]
-        project_name = (
-            ado_pr.get("repository", {}).get("project", {}).get("name", self.project)
+        project_name = (ado_pr.get("repository", {}).get("project") or {}).get(
+            "name", self.project
         )
-        project_id = ado_pr.get("repository", {}).get("project", {}).get("id", "")
+        project_id = (ado_pr.get("repository", {}).get("project") or {}).get("id", "")
         repo_name = ado_pr["repository"]["name"]
         author_email = ado_pr.get("createdBy", {}).get("uniqueName", "")
 

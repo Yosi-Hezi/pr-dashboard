@@ -67,7 +67,7 @@ def format_my_vote(my_vote: str, is_required: bool) -> str:
 
 
 def format_reviews(reviews: list, exclude_vote: str = "") -> str:
-    """Format reviewer votes as individual symbols.
+    """Format reviewer votes as grouped counts (e.g. ✓2 !3).
 
     Required reviewer pending = !, optional pending = hidden.
     exclude_vote: skip one instance of this vote type (Me column dedup).
@@ -93,7 +93,21 @@ def format_reviews(reviews: list, exclude_vote: str = "") -> str:
         else:
             parts.append(VOTE_EMOJI[vote])
 
-    return "  ".join(parts) if parts else ""
+    if not parts:
+        return ""
+
+    # Group consecutive identical symbols into compact counts
+    grouped = []
+    i = 0
+    while i < len(parts):
+        sym = parts[i]
+        count = 1
+        while i + count < len(parts) and parts[i + count] == sym:
+            count += 1
+        grouped.append(sym if count == 1 else f"{sym}{count}")
+        i += count
+
+    return " ".join(grouped)
 
 
 def format_checks(pr: dict) -> str:
