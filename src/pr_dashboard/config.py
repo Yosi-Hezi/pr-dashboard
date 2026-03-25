@@ -30,7 +30,7 @@ DEFAULT_KEYBINDINGS: dict[str, str] = {
     "main.log": "l",
     "main.peek": "v",
     "main.pin": "p",
-    "main.filter_pinned": "ctrl+p",
+    "main.filter_pinned": "f",
     "main.quit": "ctrl+c",
 }
 
