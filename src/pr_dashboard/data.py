@@ -79,9 +79,13 @@ class PrDataStore:
         """Write data to disk atomically (write tmp → rename)."""
         self.data_file.parent.mkdir(parents=True, exist_ok=True)
         import tempfile
+
         tmp = tempfile.NamedTemporaryFile(
-            mode="w", dir=self.data_file.parent, suffix=".tmp",
-            delete=False, encoding="utf-8",
+            mode="w",
+            dir=self.data_file.parent,
+            suffix=".tmp",
+            delete=False,
+            encoding="utf-8",
         )
         try:
             tmp.write(json.dumps(data, indent=2, ensure_ascii=False))
@@ -93,13 +97,32 @@ class PrDataStore:
         log.debug("Saved %d PRs to %s", len(data.get("prs", [])), self.data_file)
 
     def _upsert_pr(self, data: dict, entry: dict) -> None:
-        """Insert or update a PR entry using composite (source, id) key."""
+        """Insert or update a PR entry using composite (source, id) key.
+
+        Preserves user-local fields (pinned) across API refreshes.
+        """
         key = _pr_key(entry)
         idx = next((i for i, p in enumerate(data["prs"]) if _pr_key(p) == key), None)
         if idx is not None:
+            # Carry over user-local fields not present in API response
+            if data["prs"][idx].get("pinned"):
+                entry.setdefault("pinned", data["prs"][idx]["pinned"])
             data["prs"][idx] = entry
         else:
             data["prs"].append(entry)
+
+    def toggle_pin(self, pr_id: int, source: str = "") -> bool | None:
+        """Toggle pinned state for a PR. Returns new pinned state, or None if not found."""
+        data = self.load()
+        key = (source, pr_id)
+        for pr in data["prs"]:
+            if _pr_key(pr) == key:
+                new_state = not pr.get("pinned", False)
+                pr["pinned"] = new_state
+                self.save(data)
+                log.info("PR #%d pinned=%s", pr_id, new_state)
+                return new_state
+        return None
 
     # ── Source management ─────────────────────────────────────────────────
 
@@ -186,6 +209,7 @@ class PrDataStore:
             all_entries: list[dict] = []
 
             for source in sources:
+                log.info("[%s] Starting sync...", source)
                 try:
                     if source.startswith("ado/"):
                         org = source.removeprefix("ado/")
@@ -247,6 +271,10 @@ class PrDataStore:
 
                     elif source == "github":
                         gh = gh_client or GhClient()
+
+                        # Prefetch username to avoid N redundant auth calls
+                        # during concurrent PR enrichment
+                        await gh.get_username()
 
                         # Fetch authored + reviewer PRs in parallel
                         authored_prs, review_prs = await asyncio.gather(

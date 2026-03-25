@@ -2,15 +2,18 @@
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
 
 from pr_dashboard.formatting import (
     _derive_status,
+    format_pin,
     format_reviews,
     format_time_ago,
+    get_cell_value,
     pr_matches_filter,
+    pr_row_style,
     shorten_repo,
     sort_prs,
+    truncate,
 )
 
 
@@ -189,3 +192,163 @@ class TestSortPrs:
         # More recent first within same repo
         assert result[0]["lastUpdated"] > result[1]["lastUpdated"]
         assert result[2]["repoName"] == "BBB"
+
+    def test_pinned_prs_not_reordered(self):
+        """Pinned PRs stay in normal sort order (no pinned-first reordering)."""
+        prs = [
+            {
+                "repoName": "ZZZ",
+                "lastUpdated": "2025-01-01T00:00:00+00:00",
+                "pinned": True,
+            },
+            {"repoName": "AAA", "lastUpdated": "2025-01-02T00:00:00+00:00"},
+            {"repoName": "BBB", "lastUpdated": "2025-01-01T00:00:00+00:00"},
+        ]
+        result = sort_prs(prs)
+        # Pinned PR stays at its natural position (sorted by repo)
+        assert result[0]["repoName"] == "AAA"
+        assert result[1]["repoName"] == "BBB"
+        assert result[2]["repoName"] == "ZZZ"
+
+    def test_pinned_prs_sorted_among_themselves(self):
+        """Pinned PRs follow normal sort order (repo then updated)."""
+        prs = [
+            {
+                "repoName": "BBB",
+                "lastUpdated": "2025-01-01T00:00:00+00:00",
+                "pinned": True,
+            },
+            {
+                "repoName": "AAA",
+                "lastUpdated": "2025-01-02T00:00:00+00:00",
+                "pinned": True,
+            },
+            {"repoName": "CCC", "lastUpdated": "2025-01-01T00:00:00+00:00"},
+        ]
+        result = sort_prs(prs)
+        assert result[0]["repoName"] == "AAA"
+        assert result[1]["repoName"] == "BBB"
+        assert result[2]["repoName"] == "CCC"
+
+    def test_unpinned_pr_not_affected(self):
+        prs = [
+            {
+                "repoName": "AAA",
+                "lastUpdated": "2025-01-01T00:00:00+00:00",
+                "pinned": False,
+            },
+            {"repoName": "BBB", "lastUpdated": "2025-01-01T00:00:00+00:00"},
+        ]
+        result = sort_prs(prs)
+        # pinned=False is same as not pinned
+        assert result[0]["repoName"] == "AAA"
+        assert result[1]["repoName"] == "BBB"
+
+
+# ── format_pin ───────────────────────────────────────────────────
+
+
+class TestFormatPin:
+    def test_pinned_pr(self):
+        assert format_pin({"pinned": True}) == "★"
+
+    def test_unpinned_pr(self):
+        assert format_pin({"pinned": False}) == ""
+
+    def test_no_pinned_field(self):
+        assert format_pin({}) == ""
+
+
+# ── pr_row_style ─────────────────────────────────────────────────
+
+
+class TestPrRowStyle:
+    def test_approved_pr(self):
+        pr = {"status": "active", "reviews": [{"vote": "Approved", "isRequired": True}]}
+        style = pr_row_style(pr)
+        assert style is not None
+        assert style.bgcolor.name == "#2d4a2d"
+
+    def test_completed_pr(self):
+        style = pr_row_style({"status": "completed"})
+        assert style is not None
+        assert style.bgcolor.name == "#2d3a4a"
+
+    def test_abandoned_pr(self):
+        style = pr_row_style({"status": "abandoned"})
+        assert style is not None
+        assert style.bgcolor.name == "#4a2d2d"
+
+    def test_active_pr_no_style(self):
+        pr = {"status": "active", "reviews": []}
+        assert pr_row_style(pr) is None
+
+    def test_draft_pr_no_style(self):
+        pr = {"status": "active", "isDraft": True, "reviews": []}
+        assert pr_row_style(pr) is None
+
+
+# ── truncate with suffix ─────────────────────────────────────────
+
+
+class TestTruncateWithSuffix:
+    def test_default_suffix(self):
+        assert truncate("hello world", 8) == "hello .."
+
+    def test_custom_suffix(self):
+        assert truncate("hello world", 8, "…") == "hello w…"
+
+    def test_no_truncation(self):
+        assert truncate("hi", 10, "...") == "hi"
+
+
+# ── pr_row_style configurable ───────────────────────────────────
+
+
+class TestPrRowStyleConfigurable:
+    def test_custom_rules(self):
+        rules = [{"status": "Draft", "color": "#112233"}]
+        pr = {"status": "active", "isDraft": True, "reviews": []}
+        style = pr_row_style(pr, rules=rules)
+        assert style is not None
+        assert style.bgcolor.name == "#112233"
+
+    def test_merge_status_rule(self):
+        rules = [{"mergeStatus": "conflicts", "color": "#443322"}]
+        pr = {"status": "active", "mergeStatus": "conflicts", "reviews": []}
+        style = pr_row_style(pr, rules=rules)
+        assert style is not None
+
+    def test_wildcard_status(self):
+        rules = [{"color": "#111111"}]
+        pr = {"status": "active", "reviews": []}
+        style = pr_row_style(pr, rules=rules)
+        assert style is not None
+
+    def test_no_match(self):
+        rules = [{"status": "Completed", "color": "#aabbcc"}]
+        pr = {"status": "active", "reviews": []}
+        assert pr_row_style(pr, rules=rules) is None
+
+    def test_empty_rules(self):
+        assert pr_row_style({"status": "active", "reviews": []}, rules=[]) is None
+
+
+# ── get_cell_value ───────────────────────────────────────────────
+
+
+class TestGetCellValue:
+    def test_pin_column(self):
+        assert get_cell_value("pin", {"pinned": True}) == "★"
+        assert get_cell_value("pin", {}) == ""
+
+    def test_title_with_custom_width(self):
+        display = {"column_widths": {"title": 10}, "truncation_suffix": "…"}
+        val = get_cell_value(
+            "title", {"title": "A very long title here"}, display=display
+        )
+        assert len(val) == 10
+        assert val.endswith("…")
+
+    def test_unknown_column(self):
+        assert get_cell_value("nonexistent", {}) == ""

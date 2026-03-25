@@ -37,8 +37,7 @@ def _key_display(key: str) -> str:
 _ACTION_DESCRIPTIONS: dict[str, str] = {
     "main.help": "Toggle this help",
     "main.toggle_view": "Toggle view: My PRs ↔ Reviews",
-    "main.refresh": "Refresh selected PR",
-    "main.refresh_all": "Refresh all PRs",
+    "main.refresh": "Refresh all PRs",
     "main.sync": "Sync all registered sources",
     "main.remove": "Remove selected PR",
     "main.remove_done": "Remove all done PRs",
@@ -48,6 +47,8 @@ _ACTION_DESCRIPTIONS: dict[str, str] = {
     "main.info": "View connected sources & accounts",
     "main.log": "View activity log",
     "main.peek": "Peek at PR description & comments",
+    "main.pin": "Pin/unpin selected PR",
+    "main.filter_pinned": "Toggle pinned-only filter",
     "main.quit": "Exit",
 }
 
@@ -80,7 +81,11 @@ class HelpScreen(ModalScreen):
     }
     """
 
-    def __init__(self, keybindings: dict[str, str] | None = None, extensions: list[dict] | None = None) -> None:
+    def __init__(
+        self,
+        keybindings: dict[str, str] | None = None,
+        extensions: list[dict] | None = None,
+    ) -> None:
         super().__init__()
         self._keybindings = keybindings or DEFAULT_KEYBINDINGS
         self._extensions = extensions or []
@@ -114,7 +119,8 @@ class HelpScreen(ModalScreen):
                 "[dim]Votes:    ✓ Approved   ↻ Changes requested   ✗ Rejected   ! Required pending[/]\n"
                 "[dim]Checks:   ✓ Pass   ✗ Required fail   ~ Optional fail[/]\n"
                 "[dim]Comments: ✓ All resolved   💬 Unresolved threads[/]\n"
-                "[dim]Me:       Your vote (Reviews view only)[/]\n\n"
+                "[dim]Me:       Your vote (Reviews view only)[/]\n"
+                "[dim]Pin:      ★ Pinned (sorted to top)[/]\n\n"
                 f"[dim]Logs: {LOG_DIR}[/]"
             )
 
@@ -149,9 +155,7 @@ class InfoScreen(ModalScreen):
     }
     """
 
-    def __init__(
-        self, accounts: dict[str, str | None], sources: list[str]
-    ) -> None:
+    def __init__(self, accounts: dict[str, str | None], sources: list[str]) -> None:
         super().__init__()
         self._accounts = accounts
         self._sources = sources

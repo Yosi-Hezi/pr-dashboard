@@ -218,13 +218,20 @@ class GhClient:
           }
         }
         """
-        rc, stdout, stderr = await self._run([
-            "api", "graphql",
-            "-f", f"query={query}",
-            "-F", f"owner={owner}",
-            "-F", f"repo={repo}",
-            "-F", f"number={number}",
-        ])
+        rc, stdout, stderr = await self._run(
+            [
+                "api",
+                "graphql",
+                "-f",
+                f"query={query}",
+                "-F",
+                f"owner={owner}",
+                "-F",
+                f"repo={repo}",
+                "-F",
+                f"number={number}",
+            ]
+        )
         if rc != 0:
             log.debug(
                 "GraphQL reviewThreads failed for %s#%d: %s",
@@ -273,19 +280,23 @@ class GhClient:
                 continue
             comments = []
             for c in t.get("comments", {}).get("nodes", []):
-                comments.append({
-                    "author": (c.get("author") or {}).get("login", "unknown"),
-                    "text": c.get("body", ""),
-                    "date": c.get("updatedAt") or c.get("createdAt", ""),
-                })
+                comments.append(
+                    {
+                        "author": (c.get("author") or {}).get("login", "unknown"),
+                        "text": c.get("body", ""),
+                        "date": c.get("updatedAt") or c.get("createdAt", ""),
+                    }
+                )
             if comments:
-                active_threads.append({
-                    "id": None,
-                    "status": "active",
-                    "filePath": t.get("path"),
-                    "line": t.get("line"),
-                    "comments": comments,
-                })
+                active_threads.append(
+                    {
+                        "id": None,
+                        "status": "active",
+                        "filePath": t.get("path"),
+                        "line": t.get("line"),
+                        "comments": comments,
+                    }
+                )
 
         return {
             "commentsActive": active,

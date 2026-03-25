@@ -318,20 +318,24 @@ class AdoClient:
             for c in t.get("comments", []):
                 if c.get("isDeleted"):
                     continue
-                comments.append({
-                    "author": c.get("author", {}).get("displayName", "Unknown"),
-                    "text": c.get("content", ""),
-                    "date": c.get("publishedDate") or c.get("lastUpdatedDate", ""),
-                })
+                comments.append(
+                    {
+                        "author": c.get("author", {}).get("displayName", "Unknown"),
+                        "text": c.get("content", ""),
+                        "date": c.get("publishedDate") or c.get("lastUpdatedDate", ""),
+                    }
+                )
             if comments:
                 ctx = t.get("threadContext") or {}
-                active_threads.append({
-                    "id": t.get("id"),
-                    "status": t.get("status", "active"),
-                    "filePath": ctx.get("filePath"),
-                    "line": (ctx.get("rightFileStart") or {}).get("line"),
-                    "comments": comments,
-                })
+                active_threads.append(
+                    {
+                        "id": t.get("id"),
+                        "status": t.get("status", "active"),
+                        "filePath": ctx.get("filePath"),
+                        "line": (ctx.get("rightFileStart") or {}).get("line"),
+                        "comments": comments,
+                    }
+                )
 
         result = {
             "commentsActive": active,
