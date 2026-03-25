@@ -192,28 +192,27 @@ class TestSortPrs:
         assert result[0]["lastUpdated"] > result[1]["lastUpdated"]
         assert result[2]["repoName"] == "BBB"
 
-    def test_pinned_prs_sort_first(self):
+    def test_pinned_prs_not_reordered(self):
+        """Pinned PRs stay in normal sort order (no pinned-first reordering)."""
         prs = [
             {"repoName": "ZZZ", "lastUpdated": "2025-01-01T00:00:00+00:00", "pinned": True},
             {"repoName": "AAA", "lastUpdated": "2025-01-02T00:00:00+00:00"},
             {"repoName": "BBB", "lastUpdated": "2025-01-01T00:00:00+00:00"},
         ]
         result = sort_prs(prs)
-        # Pinned PR comes first despite repo name ZZZ
-        assert result[0].get("pinned") is True
-        assert result[0]["repoName"] == "ZZZ"
-        # Unpinned follow normal sort order
-        assert result[1]["repoName"] == "AAA"
-        assert result[2]["repoName"] == "BBB"
+        # Pinned PR stays at its natural position (sorted by repo)
+        assert result[0]["repoName"] == "AAA"
+        assert result[1]["repoName"] == "BBB"
+        assert result[2]["repoName"] == "ZZZ"
 
     def test_pinned_prs_sorted_among_themselves(self):
+        """Pinned PRs follow normal sort order (repo then updated)."""
         prs = [
             {"repoName": "BBB", "lastUpdated": "2025-01-01T00:00:00+00:00", "pinned": True},
             {"repoName": "AAA", "lastUpdated": "2025-01-02T00:00:00+00:00", "pinned": True},
             {"repoName": "CCC", "lastUpdated": "2025-01-01T00:00:00+00:00"},
         ]
         result = sort_prs(prs)
-        # Both pinned come first, sorted by repo
         assert result[0]["repoName"] == "AAA"
         assert result[1]["repoName"] == "BBB"
         assert result[2]["repoName"] == "CCC"

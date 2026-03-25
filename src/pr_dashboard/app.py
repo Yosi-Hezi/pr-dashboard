@@ -112,6 +112,7 @@ class PRDashboard(App):
         "main.log": ("Log", False, False),
         "main.peek": ("Peek", True, False),
         "main.pin": ("Pin", True, False),
+        "main.filter_pinned": ("★ Filter", True, False),
         "main.quit": ("Exit", True, False),
     }
 
@@ -131,6 +132,7 @@ class PRDashboard(App):
         "main.log": "show_log",
         "main.peek": "peek_selected",
         "main.pin": "toggle_pin",
+        "main.filter_pinned": "toggle_filter_pinned",
         "main.quit": "quit",
     }
 
@@ -158,6 +160,7 @@ class PRDashboard(App):
         self.prs: list[dict] = []
         self.filter_query: str = ""
         self._view_mode: str = "mine"  # "all", "mine", "reviews"
+        self._filter_pinned: bool = False
         self._refreshing_all: bool = False
         self._removing_prs: set[str] = set()
         self._az_user: str | None = None
@@ -298,14 +301,17 @@ class PRDashboard(App):
 
         # Show view mode
         labels = {"mine": "Mine", "reviews": "Reviews"}
-        parts.append(f"📋 {labels.get(self._view_mode, 'Mine')}")
+        view_label = labels.get(self._view_mode, 'Mine')
+        if self._filter_pinned:
+            view_label += " ★"
+        parts.append(f"📋 {view_label}")
 
         # Show PR count for current view
         view_prs = [p for p in self.prs
                      if self._view_mode != "mine" or p.get("role", "author") == "author"]
         view_prs = [p for p in view_prs
                      if self._view_mode != "reviews" or p.get("role", "author") == "reviewer"]
-        if self.filter_query:
+        if self.filter_query or self._filter_pinned:
             filtered = len(self.get_visible_prs())
             parts.append(f"🔍 {filtered}/{len(view_prs)}")
         else:
@@ -319,6 +325,8 @@ class PRDashboard(App):
             prs = [p for p in prs if p.get("role", "author") == "author"]
         elif self._view_mode == "reviews":
             prs = [p for p in prs if p.get("role", "author") == "reviewer"]
+        if self._filter_pinned:
+            prs = [p for p in prs if p.get("pinned")]
         if not self.filter_query:
             return prs
         return [p for p in prs if pr_matches_filter(p, self.filter_query)]
@@ -744,13 +752,25 @@ class PRDashboard(App):
             return
         pr_id = pr["id"]
         source = pr.get("source", "")
-        new_state = self.store.toggle_pin(pr_id, source=source)
-        if new_state is None:
-            self.notify(f"PR #{pr_id} not found", severity="warning", timeout=3)
-            return
+        # Update in-memory immediately for snappy feedback
+        new_state = not pr.get("pinned", False)
+        pr["pinned"] = new_state
+        self.refresh_table()
         verb = "Pinned" if new_state else "Unpinned"
-        self.load_and_display()
         self.notify(f"{verb} PR #{pr_id}", timeout=3)
+        # Persist to disk in background
+        self.run_worker(self._save_pin(pr_id, source))
+
+    async def _save_pin(self, pr_id: int, source: str) -> None:
+        self.store.toggle_pin(pr_id, source=source)
+
+    def action_toggle_filter_pinned(self) -> None:
+        self._filter_pinned = not self._filter_pinned
+        self.refresh_table()
+        if self._filter_pinned:
+            self.notify("Showing pinned PRs only", timeout=3)
+        else:
+            self.notify("Showing all PRs", timeout=3)
 
 
 # Register extension action methods at class level so Textual finds them

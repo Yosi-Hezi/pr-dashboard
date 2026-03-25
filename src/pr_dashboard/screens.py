@@ -49,6 +49,7 @@ _ACTION_DESCRIPTIONS: dict[str, str] = {
     "main.log": "View activity log",
     "main.peek": "Peek at PR description & comments",
     "main.pin": "Pin/unpin selected PR",
+    "main.filter_pinned": "Toggle pinned-only filter",
     "main.quit": "Exit",
 }
 

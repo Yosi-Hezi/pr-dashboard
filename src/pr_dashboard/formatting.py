@@ -239,11 +239,10 @@ def format_pin(pr: dict) -> str:
 
 
 def sort_prs(prs: list[dict]) -> list[dict]:
-    """Sort PRs: pinned first, then by repo ascending, then lastUpdated descending."""
+    """Sort PRs by repo ascending, then lastUpdated descending."""
     from datetime import datetime
 
     def _sort_key(pr: dict):
-        pinned = 0 if pr.get("pinned") else 1
         repo = shorten_repo(pr.get("repoName", "")).lower()
         updated = pr.get("lastUpdated") or ""
         try:
@@ -251,7 +250,7 @@ def sort_prs(prs: list[dict]) -> list[dict]:
             ts = dt.timestamp()
         except Exception:
             ts = 0.0
-        return (pinned, repo, -ts)
+        return (repo, -ts)
 
     return sorted(prs, key=_sort_key)
 
