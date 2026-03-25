@@ -167,7 +167,7 @@ class PRDashboard(App):
         self._removing_prs: set[str] = set()
         self._az_user: str | None = None
         self._gh_user: str | None = None
-        self._display = get_display_config()
+        self._display_cfg = get_display_config()
 
         # Store extensions for help screen
         self._extensions = get_extensions()
@@ -201,7 +201,7 @@ class PRDashboard(App):
     def _get_columns(self) -> list[str]:
         """Get column IDs for current view mode from display config."""
         view = "reviews" if self._view_mode == "reviews" else "mine"
-        return self._display.get("columns", {}).get(view, [])
+        return self._display_cfg.get("columns", {}).get(view, [])
 
     def _setup_table_columns(self) -> None:
         """Set up table columns based on current view mode."""
@@ -353,11 +353,11 @@ class PRDashboard(App):
         visible = self.get_visible_prs()
         columns = self._get_columns()
         is_reviews = self._view_mode == "reviews"
-        row_colors = self._display.get("row_colors", [])
+        row_colors = self._display_cfg.get("row_colors", [])
         row_styles: dict[int, object] = {}
         for idx, pr in enumerate(visible):
             row_key = pr_key(pr)
-            row_data = [get_cell_value(c, pr, is_reviews=is_reviews, display=self._display) for c in columns]
+            row_data = [get_cell_value(c, pr, is_reviews=is_reviews, display=self._display_cfg) for c in columns]
             table.add_row(*row_data, key=row_key)
             style = pr_row_style(pr, rules=row_colors)
             if style:
