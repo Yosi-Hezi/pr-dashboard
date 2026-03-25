@@ -8,17 +8,19 @@ import webbrowser
 from pathlib import Path
 
 from .ado_client import AdoApiError, AdoAuthError, AdoClient
-from .config import ACTION_DEFS, COLUMN_DEFS, get_display_config, get_extensions, get_keybindings, load_config
+from .config import (
+    ACTION_DEFS,
+    COLUMN_DEFS,
+    get_display_config,
+    get_extensions,
+    get_keybindings,
+    load_config,
+)
 from .data import PrDataStore
 from .formatting import (
     VOTE_EMOJI,
     esc,
-    format_checks,
-    format_comments,
-    format_my_vote,
     format_pin,
-    format_reviews,
-    format_status,
     format_status_label,
     format_time_ago,
     get_cell_value,
@@ -27,7 +29,6 @@ from .formatting import (
     pr_row_style,
     shorten_repo,
     sort_prs,
-    truncate,
 )
 from .gh_client import GhClient
 from .logger import get_logger
@@ -99,14 +100,21 @@ class PRDashboard(App):
     TITLE = "PR Dashboard — My PRs"
 
     # Build BINDINGS at class level so Textual registers them.
-    # Footer visibility is controlled by display.footer_actions in config.
+    # Order follows display.footer_actions (footer items first, then hidden ones).
     _EFFECTIVE_KB = get_keybindings()
     _DISPLAY_CFG = get_display_config()
-    _FOOTER_SET = set(_DISPLAY_CFG.get("footer_actions", []))
+    _FOOTER_ACTIONS = _DISPLAY_CFG.get("footer_actions", [])
+    _FOOTER_SET = set(_FOOTER_ACTIONS)
+    # Footer actions in configured order first, then remaining actions
+    _ORDERED_ACTIONS = list(_FOOTER_ACTIONS)
+    for _a in _EFFECTIVE_KB:
+        if _a not in _FOOTER_SET:
+            _ORDERED_ACTIONS.append(_a)
     BINDINGS = []
-    for _action, _key in _EFFECTIVE_KB.items():
+    for _action in _ORDERED_ACTIONS:
+        _key = _EFFECTIVE_KB.get(_action)
         _meta = ACTION_DEFS.get(_action)
-        if _meta:
+        if _key and _meta:
             _desc, _method, _pri = _meta
             _show = _action in _FOOTER_SET
             BINDINGS.append(Binding(_key, _method, _desc, show=_show, priority=_pri))
@@ -271,16 +279,22 @@ class PRDashboard(App):
 
         # Show view mode
         labels = {"mine": "Mine", "reviews": "Reviews"}
-        view_label = labels.get(self._view_mode, 'Mine')
+        view_label = labels.get(self._view_mode, "Mine")
         if self._filter_pinned:
             view_label += " ★"
         parts.append(f"📋 {view_label}")
 
         # Show PR count for current view
-        view_prs = [p for p in self.prs
-                     if self._view_mode != "mine" or p.get("role", "author") == "author"]
-        view_prs = [p for p in view_prs
-                     if self._view_mode != "reviews" or p.get("role", "author") == "reviewer"]
+        view_prs = [
+            p
+            for p in self.prs
+            if self._view_mode != "mine" or p.get("role", "author") == "author"
+        ]
+        view_prs = [
+            p
+            for p in view_prs
+            if self._view_mode != "reviews" or p.get("role", "author") == "reviewer"
+        ]
         if self.filter_query or self._filter_pinned:
             filtered = len(self.get_visible_prs())
             parts.append(f"🔍 {filtered}/{len(view_prs)}")
@@ -321,7 +335,10 @@ class PRDashboard(App):
         row_styles: dict[int, object] = {}
         for idx, pr in enumerate(visible):
             row_key = pr_key(pr)
-            row_data = [get_cell_value(c, pr, is_reviews=is_reviews, display=self._display_cfg) for c in columns]
+            row_data = [
+                get_cell_value(c, pr, is_reviews=is_reviews, display=self._display_cfg)
+                for c in columns
+            ]
             table.add_row(*row_data, key=row_key)
             style = pr_row_style(pr, rules=row_colors)
             if style:
@@ -388,7 +405,9 @@ class PRDashboard(App):
                 self.notify(msg, timeout=5)
             else:
                 snippet = err[:200] or out[:200] or "unknown error"
-                self.notify(f"{ext['name']} failed: {snippet}", severity="error", timeout=8)
+                self.notify(
+                    f"{ext['name']} failed: {snippet}", severity="error", timeout=8
+                )
                 log.error("Extension %s exit code %d", ext["name"], proc.returncode)
         except Exception as exc:
             self._handle_error(exc, f"Extension {ext['name']}")
@@ -430,7 +449,8 @@ class PRDashboard(App):
         reviews = pr.get("reviews", [])
         if reviews:
             visible = [
-                r for r in reviews
+                r
+                for r in reviews
                 if r.get("isRequired") or (r.get("vote") and r["vote"] != "NoVote")
             ]
 
@@ -459,8 +479,14 @@ class PRDashboard(App):
         checks = pr.get("checks", [])
         if rt is not None:
             verdict = "✓ PASSED" if rp >= rt else "✗ FAILED"
-            req_failed = [c for c in checks if c.get("isBlocking") and c["status"] != "approved"]
-            opt_failed = [c for c in checks if not c.get("isBlocking") and c["status"] != "approved"]
+            req_failed = [
+                c for c in checks if c.get("isBlocking") and c["status"] != "approved"
+            ]
+            opt_failed = [
+                c
+                for c in checks
+                if not c.get("isBlocking") and c["status"] != "approved"
+            ]
             check_parts = [f"[bold]Checks:[/] {verdict}"]
             if req_failed:
                 names = " ".join(f"✗ {esc(c['name'])}" for c in req_failed)
@@ -691,10 +717,13 @@ class PRDashboard(App):
 
 # Register extension action methods at class level so Textual finds them
 for _idx, _ext in enumerate(PRDashboard._EXTENSIONS):
+
     def _make_ext_action(ext=_ext):
         def action(self):
             self._run_extension(ext)
+
         return action
+
     setattr(PRDashboard, f"action_ext_{_idx}", _make_ext_action())
 
 

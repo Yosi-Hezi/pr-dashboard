@@ -15,13 +15,8 @@ from .formatting import (
     VOTE_EMOJI,
     esc,
     format_checks,
-    format_comments,
-    format_my_vote,
-    format_pin,
-    format_reviews,
     format_status,
     format_status_label,
-    format_source,
     format_time_ago,
     get_cell_value,
     shorten_repo,
@@ -36,9 +31,7 @@ log = get_logger()
 console = Console()
 
 
-def _pr_table(
-    prs: list[dict], title: str | None = None, role: str = ""
-) -> Table:
+def _pr_table(prs: list[dict], title: str | None = None, role: str = "") -> Table:
     """Build a rich Table from a list of PR dicts."""
     display = get_display_config()
     prs = sort_prs(prs)
@@ -53,7 +46,10 @@ def _pr_table(
         table.add_column(header)
 
     for pr in prs:
-        row = [get_cell_value(c, pr, is_reviews=is_reviews, display=display) for c in columns]
+        row = [
+            get_cell_value(c, pr, is_reviews=is_reviews, display=display)
+            for c in columns
+        ]
         table.add_row(*row)
     return table
 
@@ -79,7 +75,8 @@ def _show_pr_detail(pr: dict) -> None:
     reviews = pr.get("reviews", [])
     if reviews:
         visible = [
-            r for r in reviews
+            r
+            for r in reviews
             if r.get("isRequired") or (r.get("vote") and r["vote"] != "NoVote")
         ]
 
@@ -92,9 +89,7 @@ def _show_pr_detail(pr: dict) -> None:
             return f"{symbol} {esc(r['name'])}"
 
         if visible:
-            console.print(
-                f"[bold]Reviewers:[/] {'  '.join(_fmt(r) for r in visible)}"
-            )
+            console.print(f"[bold]Reviewers:[/] {'  '.join(_fmt(r) for r in visible)}")
         else:
             console.print("[bold]Reviewers:[/] [dim]none[/]")
     else:
@@ -108,8 +103,12 @@ def _show_pr_detail(pr: dict) -> None:
     checks = pr.get("checks", [])
     if rt is not None:
         verdict = "✓ PASSED" if rp >= rt else "✗ FAILED"
-        req_failed = [c for c in checks if c.get("isBlocking") and c["status"] != "approved"]
-        opt_failed = [c for c in checks if not c.get("isBlocking") and c["status"] != "approved"]
+        req_failed = [
+            c for c in checks if c.get("isBlocking") and c["status"] != "approved"
+        ]
+        opt_failed = [
+            c for c in checks if not c.get("isBlocking") and c["status"] != "approved"
+        ]
         check_parts = [f"[bold]Checks:[/] {verdict}"]
         if req_failed:
             names = " ".join(f"✗ {esc(c['name'])}" for c in req_failed)

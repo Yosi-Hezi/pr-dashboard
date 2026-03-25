@@ -17,6 +17,8 @@ def truncate(text: str, max_len: int, suffix: str = "..") -> str:
     """Truncate text with suffix if it exceeds max_len."""
     if len(text) <= max_len:
         return text
+    if max_len <= len(suffix):
+        return suffix[:max_len]
     return text[: max_len - len(suffix)] + suffix
 
 
@@ -150,7 +152,8 @@ def _derive_status(status: str, pr: dict | None = None) -> tuple[str, str]:
             not required
             and reviews
             and all(
-                r.get("vote") in ("Approved", "ApprovedWithSuggestions") for r in reviews
+                r.get("vote") in ("Approved", "ApprovedWithSuggestions")
+                for r in reviews
             )
         ):
             return "✓", "Approved"
@@ -206,6 +209,7 @@ def pr_row_style(pr: dict, rules: list[dict] | None = None) -> Style | None:
     """
     if rules is None:
         from .config import DEFAULT_DISPLAY
+
         rules = DEFAULT_DISPLAY["row_colors"]
 
     status = pr.get("status", "")
@@ -244,10 +248,13 @@ def format_pin(pr: dict) -> str:
     return "★" if pr.get("pinned") else ""
 
 
-def get_cell_value(col_id: str, pr: dict, *, is_reviews: bool = False, display: dict | None = None) -> str:
+def get_cell_value(
+    col_id: str, pr: dict, *, is_reviews: bool = False, display: dict | None = None
+) -> str:
     """Get formatted cell value for a column ID."""
     if display is None:
         from .config import DEFAULT_DISPLAY
+
         display = DEFAULT_DISPLAY
     widths = display.get("column_widths", {})
     suffix = display.get("truncation_suffix", "..")
@@ -266,10 +273,14 @@ def get_cell_value(col_id: str, pr: dict, *, is_reviews: bool = False, display: 
         case "title":
             return truncate(pr.get("title", ""), widths.get("title", 50), suffix)
         case "my_vote":
-            return format_my_vote(pr.get("myVote", ""), pr.get("isRequiredReviewer", False))
+            return format_my_vote(
+                pr.get("myVote", ""), pr.get("isRequiredReviewer", False)
+            )
         case "votes":
             if is_reviews:
-                return format_reviews(pr.get("reviews", []), exclude_vote=pr.get("myVote", ""))
+                return format_reviews(
+                    pr.get("reviews", []), exclude_vote=pr.get("myVote", "")
+                )
             return format_reviews(pr.get("reviews", []))
         case "checks":
             return format_checks(pr)

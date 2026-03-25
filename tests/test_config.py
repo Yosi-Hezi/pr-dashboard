@@ -137,11 +137,11 @@ class TestGetDisplayConfig:
         assert cfg["truncation_suffix"] == ".."
 
     def test_invalid_column_ids_filtered(self, tmp_path, monkeypatch):
-        import json
+
         config_file = tmp_path / "config.json"
-        config_file.write_text(json.dumps({
-            "display": {"columns": {"mine": ["pin", "bogus", "title"]}}
-        }))
+        config_file.write_text(
+            json.dumps({"display": {"columns": {"mine": ["pin", "bogus", "title"]}}})
+        )
         monkeypatch.setattr("pr_dashboard.config.CONFIG_FILE", config_file)
         cfg = get_display_config()
         assert "bogus" not in cfg["columns"]["mine"]

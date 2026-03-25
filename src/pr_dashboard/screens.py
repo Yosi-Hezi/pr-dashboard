@@ -81,7 +81,11 @@ class HelpScreen(ModalScreen):
     }
     """
 
-    def __init__(self, keybindings: dict[str, str] | None = None, extensions: list[dict] | None = None) -> None:
+    def __init__(
+        self,
+        keybindings: dict[str, str] | None = None,
+        extensions: list[dict] | None = None,
+    ) -> None:
         super().__init__()
         self._keybindings = keybindings or DEFAULT_KEYBINDINGS
         self._extensions = extensions or []
@@ -151,9 +155,7 @@ class InfoScreen(ModalScreen):
     }
     """
 
-    def __init__(
-        self, accounts: dict[str, str | None], sources: list[str]
-    ) -> None:
+    def __init__(self, accounts: dict[str, str | None], sources: list[str]) -> None:
         super().__init__()
         self._accounts = accounts
         self._sources = sources

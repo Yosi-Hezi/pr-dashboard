@@ -2,7 +2,6 @@
 
 import re
 
-import pytest
 
 from pr_dashboard.data import PrDataStore, _migrate_v1_to_v2, _pr_key
 
@@ -32,7 +31,11 @@ class TestMigrateV1ToV2:
         assert result["sources"] == []
 
     def test_already_v2_unchanged(self):
-        v2 = {"version": 2, "sources": ["github"], "prs": [{"id": 1, "source": "github"}]}
+        v2 = {
+            "version": 2,
+            "sources": ["github"],
+            "prs": [{"id": 1, "source": "github"}],
+        }
         result = _migrate_v1_to_v2(v2)
         assert result["prs"][0]["source"] == "github"
 
@@ -134,7 +137,10 @@ class TestUpsertPinPreservation:
         store._upsert_pr(data, new_entry)
 
         # pinned=False should NOT be carried over (only truthy values)
-        assert data["prs"][0].get("pinned") is None or data["prs"][0].get("pinned") is False
+        assert (
+            data["prs"][0].get("pinned") is None
+            or data["prs"][0].get("pinned") is False
+        )
 
     def test_new_pr_has_no_pinned(self, tmp_path):
         store = PrDataStore()

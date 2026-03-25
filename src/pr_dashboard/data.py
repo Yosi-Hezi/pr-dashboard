@@ -79,9 +79,13 @@ class PrDataStore:
         """Write data to disk atomically (write tmp → rename)."""
         self.data_file.parent.mkdir(parents=True, exist_ok=True)
         import tempfile
+
         tmp = tempfile.NamedTemporaryFile(
-            mode="w", dir=self.data_file.parent, suffix=".tmp",
-            delete=False, encoding="utf-8",
+            mode="w",
+            dir=self.data_file.parent,
+            suffix=".tmp",
+            delete=False,
+            encoding="utf-8",
         )
         try:
             tmp.write(json.dumps(data, indent=2, ensure_ascii=False))

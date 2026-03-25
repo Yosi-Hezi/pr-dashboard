@@ -2,7 +2,6 @@
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
 
 from pr_dashboard.formatting import (
     _derive_status,
@@ -197,7 +196,11 @@ class TestSortPrs:
     def test_pinned_prs_not_reordered(self):
         """Pinned PRs stay in normal sort order (no pinned-first reordering)."""
         prs = [
-            {"repoName": "ZZZ", "lastUpdated": "2025-01-01T00:00:00+00:00", "pinned": True},
+            {
+                "repoName": "ZZZ",
+                "lastUpdated": "2025-01-01T00:00:00+00:00",
+                "pinned": True,
+            },
             {"repoName": "AAA", "lastUpdated": "2025-01-02T00:00:00+00:00"},
             {"repoName": "BBB", "lastUpdated": "2025-01-01T00:00:00+00:00"},
         ]
@@ -210,8 +213,16 @@ class TestSortPrs:
     def test_pinned_prs_sorted_among_themselves(self):
         """Pinned PRs follow normal sort order (repo then updated)."""
         prs = [
-            {"repoName": "BBB", "lastUpdated": "2025-01-01T00:00:00+00:00", "pinned": True},
-            {"repoName": "AAA", "lastUpdated": "2025-01-02T00:00:00+00:00", "pinned": True},
+            {
+                "repoName": "BBB",
+                "lastUpdated": "2025-01-01T00:00:00+00:00",
+                "pinned": True,
+            },
+            {
+                "repoName": "AAA",
+                "lastUpdated": "2025-01-02T00:00:00+00:00",
+                "pinned": True,
+            },
             {"repoName": "CCC", "lastUpdated": "2025-01-01T00:00:00+00:00"},
         ]
         result = sort_prs(prs)
@@ -221,7 +232,11 @@ class TestSortPrs:
 
     def test_unpinned_pr_not_affected(self):
         prs = [
-            {"repoName": "AAA", "lastUpdated": "2025-01-01T00:00:00+00:00", "pinned": False},
+            {
+                "repoName": "AAA",
+                "lastUpdated": "2025-01-01T00:00:00+00:00",
+                "pinned": False,
+            },
             {"repoName": "BBB", "lastUpdated": "2025-01-01T00:00:00+00:00"},
         ]
         result = sort_prs(prs)
@@ -329,7 +344,9 @@ class TestGetCellValue:
 
     def test_title_with_custom_width(self):
         display = {"column_widths": {"title": 10}, "truncation_suffix": "…"}
-        val = get_cell_value("title", {"title": "A very long title here"}, display=display)
+        val = get_cell_value(
+            "title", {"title": "A very long title here"}, display=display
+        )
         assert len(val) == 10
         assert val.endswith("…")
 

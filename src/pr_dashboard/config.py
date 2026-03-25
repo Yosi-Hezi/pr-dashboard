@@ -33,12 +33,28 @@ DEFAULT_KEYBINDINGS: dict[str, str] = {
     "main.quit": "ctrl+c",
 }
 
-_SPECIAL_KEYS = frozenset({
-    "tab", "escape", "slash", "question_mark", "space", "enter", "backspace",
-    "up", "down", "left", "right", "home", "end", "pageup", "pagedown",
-    "delete", "insert",
-    *(f"f{n}" for n in range(1, 13)),
-})
+_SPECIAL_KEYS = frozenset(
+    {
+        "tab",
+        "escape",
+        "slash",
+        "question_mark",
+        "space",
+        "enter",
+        "backspace",
+        "up",
+        "down",
+        "left",
+        "right",
+        "home",
+        "end",
+        "pageup",
+        "pagedown",
+        "delete",
+        "insert",
+        *(f"f{n}" for n in range(1, 13)),
+    }
+)
 
 _MODIFIER_RE = re.compile(r"^(ctrl|alt|shift)\+(.+)$")
 _SINGLE_CHAR_RE = re.compile(r"^[a-z0-9]$")
@@ -83,7 +99,9 @@ def _validate_keybindings(bindings: dict) -> dict[str, str]:
         if key in seen:
             log.warning(
                 "config: duplicate key %r bound to both %r and %r",
-                key, seen[key], action,
+                key,
+                seen[key],
+                action,
             )
         else:
             seen[key] = action
@@ -133,7 +151,9 @@ def get_keybindings() -> dict[str, str]:
         if key in seen:
             log.warning(
                 "config: after merge, key %r is used by both %r and %r",
-                key, seen[key], action,
+                key,
+                seen[key],
+                action,
             )
         else:
             seen[key] = action
@@ -160,8 +180,11 @@ def _validate_extensions(extensions: list) -> list[dict]:
             continue
 
         # Check required fields are present and non-empty strings
-        missing = [f for f in _REQUIRED_EXT_FIELDS
-                    if not isinstance(ext.get(f), str) or not ext[f].strip()]
+        missing = [
+            f
+            for f in _REQUIRED_EXT_FIELDS
+            if not isinstance(ext.get(f), str) or not ext[f].strip()
+        ]
         if missing:
             log.warning("config: extension #%d missing/empty fields: %s", idx, missing)
             continue
@@ -174,14 +197,17 @@ def _validate_extensions(extensions: list) -> list[dict]:
         if key in builtin_keys:
             log.warning(
                 "config: extension %r key %r conflicts with a built-in keybinding, skipping",
-                ext["name"], key,
+                ext["name"],
+                key,
             )
             continue
 
         if key in seen_keys:
             log.warning(
                 "config: extension %r duplicates key %r already used by %r, skipping",
-                ext["name"], key, seen_keys[key],
+                ext["name"],
+                key,
+                seen_keys[key],
             )
             continue
 
@@ -197,52 +223,87 @@ def _validate_extensions(extensions: list) -> list[dict]:
 
 # Action name → (description for footer, Textual method name, priority binding)
 ACTION_DEFS: dict[str, tuple[str, str, bool]] = {
-    "main.help":           ("Help",      "toggle_help",          False),
-    "main.toggle_view":    ("PRs↔CRs",   "toggle_view",          True),
-    "main.refresh":        ("Refresh",    "refresh_all",          False),
-    "main.sync":           ("Sync",       "sync",                 True),
-    "main.remove":         ("Remove",     "remove_selected",      False),
-    "main.remove_done":    ("Remove done","remove_done",          False),
-    "main.open":           ("Open",       "open_selected",        False),
-    "main.copy_url":       ("Copy URL",   "copy_url",             False),
-    "main.filter":         ("Filter",     "show_filter",          False),
-    "main.info":           ("Info",       "show_info",            False),
-    "main.log":            ("Log",        "show_log",             False),
-    "main.peek":           ("Peek",       "peek_selected",        False),
-    "main.pin":            ("Pin",        "toggle_pin",           False),
-    "main.filter_pinned":  ("★ Filter",   "toggle_filter_pinned", False),
-    "main.quit":           ("Exit",       "quit",                 False),
+    "main.help": ("Help", "toggle_help", False),
+    "main.toggle_view": ("PRs↔CRs", "toggle_view", True),
+    "main.refresh": ("Refresh", "refresh_all", False),
+    "main.sync": ("Sync", "sync", True),
+    "main.remove": ("Remove", "remove_selected", False),
+    "main.remove_done": ("Remove done", "remove_done", False),
+    "main.open": ("Open", "open_selected", False),
+    "main.copy_url": ("Copy URL", "copy_url", False),
+    "main.filter": ("Filter", "show_filter", False),
+    "main.info": ("Info", "show_info", False),
+    "main.log": ("Log", "show_log", False),
+    "main.peek": ("Peek", "peek_selected", False),
+    "main.pin": ("Pin", "toggle_pin", False),
+    "main.filter_pinned": ("★ Filter", "toggle_filter_pinned", False),
+    "main.quit": ("Exit", "quit", False),
 }
 
 DEFAULT_FOOTER_ACTIONS: list[str] = [
-    "main.help", "main.toggle_view", "main.refresh", "main.sync",
-    "main.remove", "main.open", "main.filter", "main.info",
-    "main.peek", "main.pin", "main.filter_pinned", "main.quit",
+    "main.help",
+    "main.toggle_view",
+    "main.refresh",
+    "main.sync",
+    "main.remove",
+    "main.remove_done",
+    "main.open",
+    "main.filter",
+    "main.info",
+    "main.peek",
+    "main.pin",
+    "main.filter_pinned",
+    "main.quit",
 ]
 
 
 # ── Column definitions ───────────────────────────────────────────────────
 
 COLUMN_DEFS: dict[str, dict] = {
-    "pin":      {"header": "★"},
-    "status":   {"header": "St"},
-    "author":   {"header": "Author"},
-    "repo":     {"header": "Repo"},
-    "id":       {"header": "ID"},
-    "title":    {"header": "Title"},
-    "my_vote":  {"header": "Me"},
-    "votes":    {"header": "Votes"},
-    "checks":   {"header": "Checks"},
+    "pin": {"header": "★"},
+    "status": {"header": "St"},
+    "author": {"header": "Author"},
+    "repo": {"header": "Repo"},
+    "id": {"header": "ID"},
+    "title": {"header": "Title"},
+    "my_vote": {"header": "Me"},
+    "votes": {"header": "Votes"},
+    "checks": {"header": "Checks"},
     "comments": {"header": "Cmts"},
-    "updated":  {"header": "Updated"},
-    "fetched":  {"header": "Fetched"},
-    "source":   {"header": "Src"},
+    "updated": {"header": "Updated"},
+    "fetched": {"header": "Fetched"},
+    "source": {"header": "Src"},
 }
 
 DEFAULT_DISPLAY: dict = {
     "columns": {
-        "mine": ["pin", "status", "author", "repo", "id", "title", "votes", "checks", "comments", "updated", "fetched"],
-        "reviews": ["pin", "status", "author", "repo", "id", "title", "my_vote", "votes", "checks", "comments", "updated", "fetched"],
+        "mine": [
+            "pin",
+            "status",
+            "author",
+            "repo",
+            "id",
+            "title",
+            "votes",
+            "checks",
+            "comments",
+            "updated",
+            "fetched",
+        ],
+        "reviews": [
+            "pin",
+            "status",
+            "author",
+            "repo",
+            "id",
+            "title",
+            "my_vote",
+            "votes",
+            "checks",
+            "comments",
+            "updated",
+            "fetched",
+        ],
     },
     "column_widths": {
         "title": 50,
@@ -277,7 +338,9 @@ def get_display_config() -> dict:
             invalid = [c for c in user_cols[view] if c not in COLUMN_DEFS]
             if invalid:
                 log.warning("config: unknown column IDs in %s: %s", view, invalid)
-            result["columns"][view] = valid if valid else DEFAULT_DISPLAY["columns"][view]
+            result["columns"][view] = (
+                valid if valid else DEFAULT_DISPLAY["columns"][view]
+            )
         else:
             result["columns"][view] = DEFAULT_DISPLAY["columns"][view]
 
@@ -291,7 +354,9 @@ def get_display_config() -> dict:
 
     # Truncation suffix
     suffix = user_display.get("truncation_suffix", DEFAULT_DISPLAY["truncation_suffix"])
-    result["truncation_suffix"] = suffix if isinstance(suffix, str) else DEFAULT_DISPLAY["truncation_suffix"]
+    result["truncation_suffix"] = (
+        suffix if isinstance(suffix, str) else DEFAULT_DISPLAY["truncation_suffix"]
+    )
 
     # Row colors — list of rules
     user_colors = user_display.get("row_colors")
@@ -313,7 +378,7 @@ def get_display_config() -> dict:
         invalid = [a for a in user_footer if a not in ACTION_DEFS]
         if invalid:
             log.warning("config: unknown footer actions: %s", invalid)
-        result["footer_actions"] = valid if valid else list(DEFAULT_FOOTER_ACTIONS)
+        result["footer_actions"] = valid
     else:
         result["footer_actions"] = list(DEFAULT_FOOTER_ACTIONS)
 
