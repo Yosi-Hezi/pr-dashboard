@@ -205,6 +205,7 @@ class PrDataStore:
             all_entries: list[dict] = []
 
             for source in sources:
+                log.info("[%s] Starting sync...", source)
                 try:
                     if source.startswith("ado/"):
                         org = source.removeprefix("ado/")
@@ -266,6 +267,10 @@ class PrDataStore:
 
                     elif source == "github":
                         gh = gh_client or GhClient()
+
+                        # Prefetch username to avoid N redundant auth calls
+                        # during concurrent PR enrichment
+                        await gh.get_username()
 
                         # Fetch authored + reviewer PRs in parallel
                         authored_prs, review_prs = await asyncio.gather(

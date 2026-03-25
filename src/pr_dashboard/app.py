@@ -187,30 +187,36 @@ class PRDashboard(App):
     async def _init_auth_and_sync(self) -> None:
         """Check auth status and auto-discover on first run."""
 
-        # Check ADO + GitHub auth in parallel
+        self.notify("Checking authentication...", timeout=5)
+        log.info("Startup: checking auth status")
+
+        # Check ADO + GitHub auth in parallel, keep clients alive for reuse
+        ado_client = AdoClient()
+        gh_client = GhClient()
+
         async def _check_ado():
             try:
-                async with AdoClient() as client:
-                    return await client.get_az_username()
+                return await ado_client.get_az_username()
             except Exception:
                 return None
 
         async def _check_gh():
             try:
-                return await GhClient().check_auth()
+                return await gh_client.check_auth()
             except Exception:
                 return None
 
         self._az_user, self._gh_user = await asyncio.gather(_check_ado(), _check_gh())
         self._update_status_bar_accounts()
+        log.info("Startup: auth complete (az=%s, gh=%s)", self._az_user, self._gh_user)
 
         # First-run: auto-discover sources if none registered
         sources = self.store.get_sources()
         if not sources:
             self.notify("First run — discovering sources...", timeout=5)
+            log.info("Startup: no sources registered, discovering orgs")
             try:
-                async with AdoClient() as client:
-                    orgs = await client.discover_orgs()
+                orgs = await ado_client.discover_orgs()
                 for org in orgs:
                     self.store.add_source(f"ado/{org}")
                 if self._gh_user:
@@ -220,9 +226,36 @@ class PRDashboard(App):
             except Exception as exc:
                 log.warning("Auto-discover failed: %s", exc)
 
-        # Sync if no PRs loaded
+        # Sync if no PRs loaded — reuse authenticated clients
         if not self.prs and sources:
-            await self._sync()
+            self.notify(f"Syncing {len(sources)} source(s)...", timeout=10)
+            log.info("Startup: syncing %d sources", len(sources))
+            try:
+                # Build ado_clients dict from the single reusable client
+                ado_clients: dict[str, AdoClient] = {}
+                for src in sources:
+                    if src.startswith("ado/"):
+                        org = src.removeprefix("ado/")
+                        if org == ado_client.org:
+                            ado_clients[org] = ado_client
+                await self.store.sync(
+                    ado_clients=ado_clients,
+                    gh_client=gh_client if self._gh_user else None,
+                )
+            except (AdoApiError, AdoAuthError) as exc:
+                self._handle_error(exc, "Sync")
+            except Exception as exc:
+                self._handle_error(exc, "Sync")
+            finally:
+                self._refreshing_all = False
+            self.load_and_display()
+            self.notify(f"Ready — {len(self.prs)} PRs loaded", timeout=3)
+            log.info("Startup: complete, %d PRs loaded", len(self.prs))
+        else:
+            log.info("Startup: %d cached PRs, skipping sync", len(self.prs))
+
+        # Clean up the reusable ADO client
+        await ado_client.close()
 
     def _update_title(self) -> None:
         """Update app title to reflect current view mode."""
