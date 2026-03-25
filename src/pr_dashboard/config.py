@@ -19,7 +19,6 @@ DEFAULT_KEYBINDINGS: dict[str, str] = {
     "main.help": "question_mark",
     "main.toggle_view": "tab",
     "main.refresh": "r",
-    "main.refresh_all": "ctrl+r",
     "main.sync": "ctrl+s",
     "main.remove": "d",
     "main.remove_done": "shift+d",

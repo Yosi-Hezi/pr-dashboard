@@ -103,7 +103,6 @@ class PRDashboard(App):
         "main.help": ("Help", True, False),
         "main.toggle_view": ("PRs↔CRs", True, True),
         "main.refresh": ("Refresh", True, False),
-        "main.refresh_all": ("Refresh all", True, True),
         "main.sync": ("Sync", True, True),
         "main.remove": ("Remove", True, False),
         "main.remove_done": ("Remove done", False, False),
@@ -122,8 +121,7 @@ class PRDashboard(App):
     _ACTION_MAP: dict[str, str] = {
         "main.help": "toggle_help",
         "main.toggle_view": "toggle_view",
-        "main.refresh": "refresh_selected",
-        "main.refresh_all": "refresh_all",
+        "main.refresh": "refresh_all",
         "main.sync": "sync",
         "main.remove": "remove_selected",
         "main.remove_done": "remove_done",
@@ -566,13 +564,6 @@ class PRDashboard(App):
                 self.refresh_table()
                 self.query_one("#pr-table", StyledDataTable).focus()
                 event.prevent_default()
-        elif event.key == "ctrl+r":
-            # Legacy: prevent browser default. Binding system handles refresh_all.
-            event.prevent_default()
-        elif event.key == "f":
-            if not filter_input.has_class("visible"):
-                self.action_toggle_filter_pinned()
-                event.prevent_default()
 
     # ── View toggle ──────────────────────────────────────────────────────────
 
@@ -583,27 +574,6 @@ class PRDashboard(App):
         self.refresh_table()
 
     # ── Refresh ────────────────────────────────────────────────────────────
-
-    def action_refresh_selected(self) -> None:
-        pr = self.get_selected_pr()
-        if not pr:
-            return
-        pr_id = pr["id"]
-        source = pr.get("source", "")
-        key = pr_key(pr)
-        self.notify(f"Refreshing PR #{pr_id}...", timeout=3)
-        self.run_worker(self._refresh_single(pr_id, source, key))
-
-    async def _refresh_single(
-        self, pr_id: int, source: str = "", key: str = ""
-    ) -> None:
-        try:
-            await self.store.refresh(pr_id, source=source)
-        except (AdoApiError, AdoAuthError) as exc:
-            self._handle_error(exc, f"Refresh PR #{pr_id}")
-            return
-        self.load_and_display()
-        self.notify(f"PR #{pr_id} refreshed", timeout=3)
 
     def action_refresh_all(self) -> None:
         if self._refreshing_all:

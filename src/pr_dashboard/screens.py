@@ -37,8 +37,7 @@ def _key_display(key: str) -> str:
 _ACTION_DESCRIPTIONS: dict[str, str] = {
     "main.help": "Toggle this help",
     "main.toggle_view": "Toggle view: My PRs ↔ Reviews",
-    "main.refresh": "Refresh selected PR",
-    "main.refresh_all": "Refresh all PRs",
+    "main.refresh": "Refresh all PRs",
     "main.sync": "Sync all registered sources",
     "main.remove": "Remove selected PR",
     "main.remove_done": "Remove all done PRs",
