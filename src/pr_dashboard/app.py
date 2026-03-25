@@ -8,7 +8,7 @@ import webbrowser
 from pathlib import Path
 
 from .ado_client import AdoApiError, AdoAuthError, AdoClient
-from .config import COLUMN_DEFS, get_display_config, get_extensions, get_keybindings, load_config
+from .config import ACTION_DEFS, COLUMN_DEFS, get_display_config, get_extensions, get_keybindings, load_config
 from .data import PrDataStore
 from .formatting import (
     VOTE_EMOJI,
@@ -98,51 +98,17 @@ class PRDashboard(App):
 
     TITLE = "PR Dashboard — My PRs"
 
-    # Action name → (description, show_in_footer, priority)
-    _ACTION_META: dict[str, tuple[str, bool, bool]] = {
-        "main.help": ("Help", True, False),
-        "main.toggle_view": ("PRs↔CRs", True, True),
-        "main.refresh": ("Refresh", True, False),
-        "main.sync": ("Sync", True, True),
-        "main.remove": ("Remove", True, False),
-        "main.remove_done": ("Remove done", False, False),
-        "main.open": ("Open", True, False),
-        "main.copy_url": ("Copy URL", False, False),
-        "main.filter": ("Filter", True, False),
-        "main.info": ("Info", True, False),
-        "main.log": ("Log", False, False),
-        "main.peek": ("Peek", True, False),
-        "main.pin": ("Pin", True, False),
-        "main.filter_pinned": ("★ Filter", True, False),
-        "main.quit": ("Exit", True, False),
-    }
-
-    # Action name → Textual action method name
-    _ACTION_MAP: dict[str, str] = {
-        "main.help": "toggle_help",
-        "main.toggle_view": "toggle_view",
-        "main.refresh": "refresh_all",
-        "main.sync": "sync",
-        "main.remove": "remove_selected",
-        "main.remove_done": "remove_done",
-        "main.open": "open_selected",
-        "main.copy_url": "copy_url",
-        "main.filter": "show_filter",
-        "main.info": "show_info",
-        "main.log": "show_log",
-        "main.peek": "peek_selected",
-        "main.pin": "toggle_pin",
-        "main.filter_pinned": "toggle_filter_pinned",
-        "main.quit": "quit",
-    }
-
-    # Build BINDINGS at class level so Textual registers them
+    # Build BINDINGS at class level so Textual registers them.
+    # Footer visibility is controlled by display.footer_actions in config.
     _EFFECTIVE_KB = get_keybindings()
+    _DISPLAY_CFG = get_display_config()
+    _FOOTER_SET = set(_DISPLAY_CFG.get("footer_actions", []))
     BINDINGS = []
     for _action, _key in _EFFECTIVE_KB.items():
-        _method = _ACTION_MAP.get(_action)
-        if _method:
-            _desc, _show, _pri = _ACTION_META.get(_action, ("", False, False))
+        _meta = ACTION_DEFS.get(_action)
+        if _meta:
+            _desc, _method, _pri = _meta
+            _show = _action in _FOOTER_SET
             BINDINGS.append(Binding(_key, _method, _desc, show=_show, priority=_pri))
 
     # Extension bindings

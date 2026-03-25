@@ -21,15 +21,15 @@ DEFAULT_KEYBINDINGS: dict[str, str] = {
     "main.refresh": "r",
     "main.sync": "ctrl+s",
     "main.remove": "d",
-    "main.remove_done": "shift+d",
+    "main.remove_done": "ctrl+d",
     "main.open": "o",
     "main.copy_url": "c",
     "main.filter": "slash",
     "main.info": "i",
     "main.log": "l",
     "main.peek": "v",
-    "main.pin": "p",
-    "main.filter_pinned": "f",
+    "main.pin": "f",
+    "main.filter_pinned": "ctrl+f",
     "main.quit": "ctrl+c",
 }
 
@@ -193,6 +193,36 @@ def _validate_extensions(extensions: list) -> list[dict]:
 
 # ── Display configuration ────────────────────────────────────────────────
 
+# ── Action definitions ────────────────────────────────────────────────────
+
+# Action name → (description for footer, Textual method name, priority binding)
+ACTION_DEFS: dict[str, tuple[str, str, bool]] = {
+    "main.help":           ("Help",      "toggle_help",          False),
+    "main.toggle_view":    ("PRs↔CRs",   "toggle_view",          True),
+    "main.refresh":        ("Refresh",    "refresh_all",          False),
+    "main.sync":           ("Sync",       "sync",                 True),
+    "main.remove":         ("Remove",     "remove_selected",      False),
+    "main.remove_done":    ("Remove done","remove_done",          False),
+    "main.open":           ("Open",       "open_selected",        False),
+    "main.copy_url":       ("Copy URL",   "copy_url",             False),
+    "main.filter":         ("Filter",     "show_filter",          False),
+    "main.info":           ("Info",       "show_info",            False),
+    "main.log":            ("Log",        "show_log",             False),
+    "main.peek":           ("Peek",       "peek_selected",        False),
+    "main.pin":            ("Pin",        "toggle_pin",           False),
+    "main.filter_pinned":  ("★ Filter",   "toggle_filter_pinned", False),
+    "main.quit":           ("Exit",       "quit",                 False),
+}
+
+DEFAULT_FOOTER_ACTIONS: list[str] = [
+    "main.help", "main.toggle_view", "main.refresh", "main.sync",
+    "main.remove", "main.open", "main.filter", "main.info",
+    "main.peek", "main.pin", "main.filter_pinned", "main.quit",
+]
+
+
+# ── Column definitions ───────────────────────────────────────────────────
+
 COLUMN_DEFS: dict[str, dict] = {
     "pin":      {"header": "★"},
     "status":   {"header": "St"},
@@ -224,6 +254,7 @@ DEFAULT_DISPLAY: dict = {
         {"status": "Completed", "color": "#2d3a4a"},
         {"status": "Abandoned", "color": "#4a2d2d"},
     ],
+    "footer_actions": list(DEFAULT_FOOTER_ACTIONS),
 }
 
 
@@ -274,6 +305,17 @@ def get_display_config() -> dict:
         result["row_colors"] = valid_rules
     else:
         result["row_colors"] = list(DEFAULT_DISPLAY["row_colors"])
+
+    # Footer actions — ordered list of action names to show in footer
+    user_footer = user_display.get("footer_actions")
+    if user_footer is not None and isinstance(user_footer, list):
+        valid = [a for a in user_footer if a in ACTION_DEFS]
+        invalid = [a for a in user_footer if a not in ACTION_DEFS]
+        if invalid:
+            log.warning("config: unknown footer actions: %s", invalid)
+        result["footer_actions"] = valid if valid else list(DEFAULT_FOOTER_ACTIONS)
+    else:
+        result["footer_actions"] = list(DEFAULT_FOOTER_ACTIONS)
 
     return result
 
