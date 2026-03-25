@@ -23,6 +23,7 @@ from .formatting import (
     format_time_ago,
     pr_key,
     pr_matches_filter,
+    pr_row_style,
     shorten_repo,
     sort_prs,
     truncate,
@@ -36,6 +37,23 @@ from textual.events import Key
 from textual.widgets import DataTable, Footer, Header, Input, Static
 
 log = get_logger()
+
+
+class StyledDataTable(DataTable):
+    """DataTable with per-row background color support."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._row_bg: dict[int, object] = {}
+
+    def set_row_styles(self, styles: dict[int, object]) -> None:
+        self._row_bg = styles
+
+    def _get_row_style(self, row_index: int, base_style):
+        style = super()._get_row_style(row_index, base_style)
+        if row_index in self._row_bg:
+            style += self._row_bg[row_index]
+        return style
 
 
 # ── Main app ──────────────────────────────────────────────────────────────
@@ -160,14 +178,14 @@ class PRDashboard(App):
         yield Input(
             placeholder="Type to filter PRs... (Escape to clear)", id="filter-input"
         )
-        yield DataTable(id="pr-table", cursor_type="row")
+        yield StyledDataTable(id="pr-table", cursor_type="row")
         yield Static("Select a PR to see details", id="detail-panel")
         yield Static("", id="status-bar")
         yield Footer()
 
     def on_mount(self) -> None:
         self._setup_table_columns()
-        table = self.query_one("#pr-table", DataTable)
+        table = self.query_one("#pr-table", StyledDataTable)
         table.focus()
         self.load_and_display()
 
@@ -176,8 +194,9 @@ class PRDashboard(App):
 
     def _setup_table_columns(self) -> None:
         """Set up table columns based on current view mode."""
-        table = self.query_one("#pr-table", DataTable)
+        table = self.query_one("#pr-table", StyledDataTable)
         table.clear(columns=True)
+        table.set_row_styles({})
         cols = ["★", "St", "Author", "Repo", "ID", "Title"]
         if self._view_mode == "reviews":
             cols.append("Me")
@@ -314,12 +333,13 @@ class PRDashboard(App):
             self._update_detail_panel(pr)
 
     def refresh_table(self) -> None:
-        table = self.query_one("#pr-table", DataTable)
+        table = self.query_one("#pr-table", StyledDataTable)
         prev_row = table.cursor_row
         self._setup_table_columns()
         visible = self.get_visible_prs()
         is_reviews = self._view_mode == "reviews"
-        for pr in visible:
+        row_styles: dict[int, object] = {}
+        for idx, pr in enumerate(visible):
             title = truncate(pr.get("title", ""), 50)
             author = truncate(pr.get("author", ""), 14)
             pr_id = pr.get("id")
@@ -357,6 +377,10 @@ class PRDashboard(App):
                 ]
             )
             table.add_row(*row_data, key=row_key)
+            style = pr_row_style(pr)
+            if style:
+                row_styles[idx] = style
+        table.set_row_styles(row_styles)
         if table.row_count > 0:
             table.move_cursor(row=min(prev_row, table.row_count - 1))
         else:
@@ -370,7 +394,7 @@ class PRDashboard(App):
         self.notify(str(exc), title=context, severity="error", timeout=8)
 
     def get_selected_pr(self) -> dict | None:
-        table = self.query_one("#pr-table", DataTable)
+        table = self.query_one("#pr-table", StyledDataTable)
         if table.row_count == 0:
             return None
         row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
@@ -548,7 +572,7 @@ class PRDashboard(App):
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "filter-input":
-            self.query_one("#pr-table", DataTable).focus()
+            self.query_one("#pr-table", StyledDataTable).focus()
 
     def on_key(self, event: Key) -> None:
         filter_input = self.query_one("#filter-input", Input)
@@ -558,7 +582,7 @@ class PRDashboard(App):
                 filter_input.value = ""
                 self.filter_query = ""
                 self.refresh_table()
-                self.query_one("#pr-table", DataTable).focus()
+                self.query_one("#pr-table", StyledDataTable).focus()
                 event.prevent_default()
         elif event.key == "ctrl+r":
             # Legacy: prevent browser default. Binding system handles refresh_all.

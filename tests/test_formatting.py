@@ -10,6 +10,7 @@ from pr_dashboard.formatting import (
     format_reviews,
     format_time_ago,
     pr_matches_filter,
+    pr_row_style,
     shorten_repo,
     sort_prs,
 )
@@ -240,3 +241,32 @@ class TestFormatPin:
 
     def test_no_pinned_field(self):
         assert format_pin({}) == ""
+
+
+# ── pr_row_style ─────────────────────────────────────────────────
+
+
+class TestPrRowStyle:
+    def test_approved_pr(self):
+        pr = {"status": "active", "reviews": [{"vote": "Approved", "isRequired": True}]}
+        style = pr_row_style(pr)
+        assert style is not None
+        assert style.bgcolor.name == "#2d4a2d"
+
+    def test_completed_pr(self):
+        style = pr_row_style({"status": "completed"})
+        assert style is not None
+        assert style.bgcolor.name == "#2d3a4a"
+
+    def test_abandoned_pr(self):
+        style = pr_row_style({"status": "abandoned"})
+        assert style is not None
+        assert style.bgcolor.name == "#4a2d2d"
+
+    def test_active_pr_no_style(self):
+        pr = {"status": "active", "reviews": []}
+        assert pr_row_style(pr) is None
+
+    def test_draft_pr_no_style(self):
+        pr = {"status": "active", "isDraft": True, "reviews": []}
+        assert pr_row_style(pr) is None

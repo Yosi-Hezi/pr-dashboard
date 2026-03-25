@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from rich.markup import escape
+from rich.style import Style
 
 
 def pr_key(pr: dict) -> str:
@@ -195,6 +196,27 @@ def format_status_label(status: str, pr: dict | None = None) -> str:
     if _has_merge_conflicts(pr):
         return f"{symbol} {label} · ⚠ Merge Conflicts"
     return f"{symbol} {label}"
+
+
+# Row background styles — dark pastels for state-based coloring
+_ROW_STYLES: dict[str, Style] = {
+    "approved": Style(bgcolor="#2d4a2d"),
+    "completed": Style(bgcolor="#2d3a4a"),
+    "abandoned": Style(bgcolor="#4a2d2d"),
+}
+
+
+def pr_row_style(pr: dict) -> Style | None:
+    """Return row background style based on PR state, or None for default."""
+    status = pr.get("status", "")
+    _, label = _derive_status(status, pr)
+    if label == "Approved":
+        return _ROW_STYLES["approved"]
+    if status == "completed":
+        return _ROW_STYLES["completed"]
+    if status == "abandoned":
+        return _ROW_STYLES["abandoned"]
+    return None
 
 
 def format_source(source: str) -> str:
