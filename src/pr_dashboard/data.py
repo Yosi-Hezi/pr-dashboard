@@ -190,6 +190,126 @@ class PrDataStore:
 
     # ── Commands ──────────────────────────────────────────────────────────
 
+    async def _sync_source(
+        self,
+        source: str,
+        ado_clients: dict[str, AdoClient] | None,
+        gh_client: GhClient | None,
+        excluded_repos: set[str],
+    ) -> tuple[list[dict], str | None]:
+        """Sync a single source. Returns (entries, current_user_email)."""
+        log.info("[%s] Starting sync...", source)
+        entries: list[dict] = []
+        user_email: str | None = None
+
+        try:
+            if source.startswith("ado/"):
+                org = source.removeprefix("ado/")
+                shared = (ado_clients or {}).get(org)
+                client = shared or AdoClient(org=org)
+                try:
+                    _, user_email = await client.get_current_user()
+
+                    # Fetch authored + reviewer PRs in parallel
+                    authored_raw, review_raw = await asyncio.gather(
+                        client.list_my_prs(status="active"),
+                        client.list_my_review_prs(status="active"),
+                    )
+
+                    # Dedup: if PR appears in both, keep as author
+                    authored_ids = {pr["pullRequestId"] for pr in authored_raw}
+                    review_only = [
+                        pr
+                        for pr in review_raw
+                        if pr["pullRequestId"] not in authored_ids
+                        and pr.get("repository", {}).get("name", "")
+                        not in excluded_repos
+                        and not pr.get("isDraft", False)
+                    ]
+
+                    enriched = await asyncio.gather(
+                        *(client.enrich_pr(pr, role="author") for pr in authored_raw),
+                        *(client.enrich_pr(pr, role="reviewer") for pr in review_only),
+                        return_exceptions=True,
+                    )
+                    for entry in enriched:
+                        if isinstance(entry, Exception):
+                            log.error("[%s] Failed to enrich PR: %s", source, entry)
+                            continue
+                        if isinstance(entry, dict):
+                            entries.append(entry)
+                    ok = len([e for e in enriched if not isinstance(e, Exception)])
+                    log.info(
+                        "[%s] Synced %d PRs (%d authored, %d reviews)",
+                        source,
+                        ok,
+                        len(authored_raw),
+                        len(review_only),
+                    )
+                finally:
+                    if not shared:
+                        await client.close()
+
+            elif source == "github":
+                gh = gh_client or GhClient()
+
+                # Prefetch username to avoid N redundant auth calls
+                await gh.get_username()
+
+                # Fetch authored + reviewer PRs in parallel
+                authored_prs, review_prs = await asyncio.gather(
+                    gh.list_my_prs(),
+                    gh.list_my_review_prs(),
+                )
+
+                # Dedup: if PR appears in both, keep as author
+                authored_keys = {
+                    (
+                        p.get("repository", {}).get("nameWithOwner", ""),
+                        p["number"],
+                    )
+                    for p in authored_prs
+                }
+                review_only = [
+                    p
+                    for p in review_prs
+                    if (
+                        p.get("repository", {}).get("nameWithOwner", ""),
+                        p["number"],
+                    )
+                    not in authored_keys
+                    and p.get("repository", {}).get("name", "") not in excluded_repos
+                    and not p.get("isDraft", False)
+                ]
+
+                enriched = await asyncio.gather(
+                    *(gh.enrich_pr(pr, role="author") for pr in authored_prs),
+                    *(gh.enrich_pr(pr, role="reviewer") for pr in review_only),
+                    return_exceptions=True,
+                )
+                for entry in enriched:
+                    if isinstance(entry, Exception):
+                        log.error("[github] Failed to enrich PR: %s", entry)
+                        continue
+                    if isinstance(entry, dict):
+                        entries.append(entry)
+                ok = len([e for e in enriched if not isinstance(e, Exception)])
+                log.info(
+                    "[github] Synced %d PRs (%d authored, %d reviews)",
+                    ok,
+                    len(authored_prs),
+                    len(review_only),
+                )
+
+        except (AdoApiError, AdoAuthError) as exc:
+            log.error("[%s] Sync failed: %s", source, exc)
+        except GhApiError as exc:
+            log.error("[%s] GitHub sync failed: %s", source, exc)
+        except Exception as exc:
+            log.error("[%s] Unexpected error: %s", source, exc)
+
+        return entries, user_email
+
     async def sync(
         self,
         ado_clients: dict[str, AdoClient] | None = None,
@@ -208,126 +328,21 @@ class PrDataStore:
             # Gather PRs from all sources
             all_entries: list[dict] = []
 
+            # Sync all sources concurrently
+            source_tasks = []
             for source in sources:
-                log.info("[%s] Starting sync...", source)
-                try:
-                    if source.startswith("ado/"):
-                        org = source.removeprefix("ado/")
-                        shared = (ado_clients or {}).get(org)
-                        client = shared or AdoClient(org=org)
-                        try:
-                            _, user_email = await client.get_current_user()
-                            data["currentUser"] = user_email
-
-                            # Fetch authored + reviewer PRs in parallel
-                            authored_raw, review_raw = await asyncio.gather(
-                                client.list_my_prs(status="active"),
-                                client.list_my_review_prs(status="active"),
-                            )
-
-                            # Dedup: if PR appears in both, keep as author
-                            authored_ids = {pr["pullRequestId"] for pr in authored_raw}
-                            review_only = [
-                                pr
-                                for pr in review_raw
-                                if pr["pullRequestId"] not in authored_ids
-                                and pr.get("repository", {}).get("name", "")
-                                not in excluded_repos
-                                and not pr.get("isDraft", False)
-                            ]
-
-                            entries = await asyncio.gather(
-                                *(
-                                    client.enrich_pr(pr, role="author")
-                                    for pr in authored_raw
-                                ),
-                                *(
-                                    client.enrich_pr(pr, role="reviewer")
-                                    for pr in review_only
-                                ),
-                                return_exceptions=True,
-                            )
-                            for entry in entries:
-                                if isinstance(entry, Exception):
-                                    log.error(
-                                        "[%s] Failed to enrich PR: %s", source, entry
-                                    )
-                                    continue
-                                if isinstance(entry, dict):
-                                    all_entries.append(entry)
-                            ok = len(
-                                [e for e in entries if not isinstance(e, Exception)]
-                            )
-                            log.info(
-                                "[%s] Synced %d PRs (%d authored, %d reviews)",
-                                source,
-                                ok,
-                                len(authored_raw),
-                                len(review_only),
-                            )
-                        finally:
-                            if not shared:
-                                await client.close()
-
-                    elif source == "github":
-                        gh = gh_client or GhClient()
-
-                        # Prefetch username to avoid N redundant auth calls
-                        # during concurrent PR enrichment
-                        await gh.get_username()
-
-                        # Fetch authored + reviewer PRs in parallel
-                        authored_prs, review_prs = await asyncio.gather(
-                            gh.list_my_prs(),
-                            gh.list_my_review_prs(),
-                        )
-
-                        # Dedup: if PR appears in both, keep as author
-                        authored_keys = {
-                            (
-                                p.get("repository", {}).get("nameWithOwner", ""),
-                                p["number"],
-                            )
-                            for p in authored_prs
-                        }
-                        review_only = [
-                            p
-                            for p in review_prs
-                            if (
-                                p.get("repository", {}).get("nameWithOwner", ""),
-                                p["number"],
-                            )
-                            not in authored_keys
-                            and p.get("repository", {}).get("name", "")
-                            not in excluded_repos
-                            and not p.get("isDraft", False)
-                        ]
-
-                        entries = await asyncio.gather(
-                            *(gh.enrich_pr(pr, role="author") for pr in authored_prs),
-                            *(gh.enrich_pr(pr, role="reviewer") for pr in review_only),
-                            return_exceptions=True,
-                        )
-                        for entry in entries:
-                            if isinstance(entry, Exception):
-                                log.error("[github] Failed to enrich PR: %s", entry)
-                                continue
-                            if isinstance(entry, dict):
-                                all_entries.append(entry)
-                        ok = len([e for e in entries if not isinstance(e, Exception)])
-                        log.info(
-                            "[github] Synced %d PRs (%d authored, %d reviews)",
-                            ok,
-                            len(authored_prs),
-                            len(review_only),
-                        )
-
-                except (AdoApiError, AdoAuthError) as exc:
-                    log.error("[%s] Sync failed: %s", source, exc)
-                except GhApiError as exc:
-                    log.error("[%s] GitHub sync failed: %s", source, exc)
-                except Exception as exc:
-                    log.error("[%s] Unexpected error: %s", source, exc)
+                source_tasks.append(
+                    self._sync_source(source, ado_clients, gh_client, excluded_repos)
+                )
+            results = await asyncio.gather(*source_tasks, return_exceptions=True)
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    log.error("[%s] Unexpected error: %s", sources[i], result)
+                elif isinstance(result, tuple):
+                    entries, user_email = result
+                    all_entries.extend(entries)
+                    if user_email:
+                        data["currentUser"] = user_email
 
             # Upsert all fetched entries
             for entry in all_entries:

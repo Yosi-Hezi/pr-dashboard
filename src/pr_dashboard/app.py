@@ -229,6 +229,8 @@ class PRDashboard(App):
         # Sync if no PRs loaded — reuse authenticated clients
         if not self.prs and sources:
             self._refreshing_all = True
+            table = self.query_one("#pr-table", StyledDataTable)
+            table.loading = True
             self.notify(f"Syncing {len(sources)} source(s)...", timeout=10)
             log.info("Startup: syncing %d sources", len(sources))
             try:
@@ -249,6 +251,7 @@ class PRDashboard(App):
                 self._handle_error(exc, "Sync")
             finally:
                 self._refreshing_all = False
+                table.loading = False
 
             # Schedule UI update on the main message loop so the screen
             # repaints even though no user event initiated this worker.
@@ -578,6 +581,7 @@ class PRDashboard(App):
         if self._refreshing_all:
             return
         self._refreshing_all = True
+        self.query_one("#pr-table", StyledDataTable).loading = True
         self.notify("Refreshing all PRs...", timeout=5)
         self.run_worker(self._refresh_all())
 
@@ -589,6 +593,7 @@ class PRDashboard(App):
             return
         finally:
             self._refreshing_all = False
+            self.query_one("#pr-table", StyledDataTable).loading = False
         self.load_and_display()
         self.notify(f"All PRs refreshed — {len(self.prs)} loaded", timeout=3)
 
@@ -598,6 +603,7 @@ class PRDashboard(App):
         if self._refreshing_all:
             return
         self._refreshing_all = True
+        self.query_one("#pr-table", StyledDataTable).loading = True
         sources = self.store.get_sources()
         self.notify(f"Syncing {len(sources)} source(s)...", timeout=5)
         self.run_worker(self._sync())
@@ -613,6 +619,7 @@ class PRDashboard(App):
             return
         finally:
             self._refreshing_all = False
+            self.query_one("#pr-table", StyledDataTable).loading = False
         self.load_and_display()
         self.notify(f"Synced — {len(self.prs)} PRs loaded", timeout=3)
 

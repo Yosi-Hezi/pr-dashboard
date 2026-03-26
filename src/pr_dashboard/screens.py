@@ -153,6 +153,9 @@ class InfoScreen(ModalScreen):
         text-style: bold;
         margin-bottom: 1;
     }
+    #info-content {
+        height: 1fr;
+    }
     """
 
     def __init__(self, accounts: dict[str, str | None], sources: list[str]) -> None:
@@ -182,7 +185,8 @@ class InfoScreen(ModalScreen):
 
         with Vertical(id="info-dialog"):
             yield Label("Info", id="info-title")
-            yield Static("\n".join(lines))
+            with VerticalScroll(id="info-content"):
+                yield Static("\n".join(lines))
 
 
 class LogScreen(ModalScreen):
