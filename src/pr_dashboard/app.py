@@ -252,15 +252,9 @@ class PRDashboard(App):
             finally:
                 self._refreshing_all = False
                 self._stop_sync_spinner()
-
-            # Schedule UI update on the main message loop so the screen
-            # repaints even though no user event initiated this worker.
-            def _finish_startup():
-                self.load_and_display()
-                self.notify(f"Ready — {len(self.prs)} PRs loaded", timeout=3)
-                log.info("Startup: complete, %d PRs loaded", len(self.prs))
-
-            self.call_later(_finish_startup)
+            self.load_and_display()
+            self.notify(f"Ready — {len(self.prs)} PRs loaded", timeout=3)
+            log.info("Startup: complete, %d PRs loaded", len(self.prs))
         else:
             log.info("Startup: %d cached PRs, skipping sync", len(self.prs))
 
