@@ -136,6 +136,8 @@ class PRDashboard(App):
         self._view_mode: str = "mine"  # "all", "mine", "reviews"
         self._filter_pinned: bool = False
         self._refreshing_all: bool = False
+        self._sync_timer = None
+        self._sync_spinner_idx = 0
         self._removing_prs: set[str] = set()
         self._az_user: str | None = None
         self._gh_user: str | None = None
@@ -229,9 +231,7 @@ class PRDashboard(App):
         # Sync if no PRs loaded — reuse authenticated clients
         if not self.prs and sources:
             self._refreshing_all = True
-            table = self.query_one("#pr-table", StyledDataTable)
-            table.loading = True
-            self.notify(f"Syncing {len(sources)} source(s)...", timeout=10)
+            self._start_sync_spinner(f"Syncing {len(sources)} source(s)")
             log.info("Startup: syncing %d sources", len(sources))
             try:
                 # Build ado_clients dict from the single reusable client
@@ -251,7 +251,7 @@ class PRDashboard(App):
                 self._handle_error(exc, "Sync")
             finally:
                 self._refreshing_all = False
-                table.loading = False
+                self._stop_sync_spinner()
 
             # Schedule UI update on the main message loop so the screen
             # repaints even though no user event initiated this worker.
@@ -312,6 +312,25 @@ class PRDashboard(App):
             parts.append(f"{len(view_prs)} PRs")
 
         self.query_one("#status-bar", Static).update(" · ".join(parts))
+
+    _SYNC_FRAMES = ("◐", "◓", "◑", "◒")
+
+    def _start_sync_spinner(self, label: str = "Syncing") -> None:
+        self._sync_label = label
+        self._sync_spinner_idx = 0
+        self._update_sync_spinner()
+        self._sync_timer = self.set_interval(0.25, self._update_sync_spinner)
+
+    def _update_sync_spinner(self) -> None:
+        frame = self._SYNC_FRAMES[self._sync_spinner_idx % len(self._SYNC_FRAMES)]
+        self._sync_spinner_idx += 1
+        self.query_one("#status-bar", Static).update(f"{frame} {self._sync_label}…")
+
+    def _stop_sync_spinner(self) -> None:
+        if self._sync_timer is not None:
+            self._sync_timer.stop()
+            self._sync_timer = None
+        self._update_status_bar_accounts()
 
     def get_visible_prs(self) -> list[dict]:
         prs = sort_prs(self.prs)
@@ -581,8 +600,7 @@ class PRDashboard(App):
         if self._refreshing_all:
             return
         self._refreshing_all = True
-        self.query_one("#pr-table", StyledDataTable).loading = True
-        self.notify("Refreshing all PRs...", timeout=5)
+        self._start_sync_spinner("Refreshing")
         self.run_worker(self._refresh_all())
 
     async def _refresh_all(self) -> None:
@@ -593,7 +611,7 @@ class PRDashboard(App):
             return
         finally:
             self._refreshing_all = False
-            self.query_one("#pr-table", StyledDataTable).loading = False
+            self._stop_sync_spinner()
         self.load_and_display()
         self.notify(f"All PRs refreshed — {len(self.prs)} loaded", timeout=3)
 
@@ -603,9 +621,8 @@ class PRDashboard(App):
         if self._refreshing_all:
             return
         self._refreshing_all = True
-        self.query_one("#pr-table", StyledDataTable).loading = True
         sources = self.store.get_sources()
-        self.notify(f"Syncing {len(sources)} source(s)...", timeout=5)
+        self._start_sync_spinner(f"Syncing {len(sources)} source(s)")
         self.run_worker(self._sync())
 
     async def _sync(self) -> None:
@@ -619,7 +636,7 @@ class PRDashboard(App):
             return
         finally:
             self._refreshing_all = False
-            self.query_one("#pr-table", StyledDataTable).loading = False
+            self._stop_sync_spinner()
         self.load_and_display()
         self.notify(f"Synced — {len(self.prs)} PRs loaded", timeout=3)
 
