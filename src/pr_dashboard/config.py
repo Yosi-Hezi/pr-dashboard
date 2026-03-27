@@ -60,7 +60,7 @@ _SPECIAL_KEYS = frozenset(
 )
 
 _MODIFIER_RE = re.compile(r"^(ctrl|alt|shift)\+(.+)$")
-_SINGLE_CHAR_RE = re.compile(r"^[a-z0-9]$")
+_SINGLE_CHAR_RE = re.compile(r"^[a-zA-Z0-9]$")
 
 
 def _validate_key(key: str) -> bool:
