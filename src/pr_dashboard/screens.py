@@ -409,7 +409,7 @@ class ManageSourcesScreen(ModalScreen):
 
     BINDINGS = [
         Binding("escape", "handle_escape", "Close", priority=True),
-        Binding("ctrl+m", "close", "Close"),
+        Binding("S", "close", "Close"),
         Binding("space", "toggle_source", "Toggle"),
         Binding("a", "show_add_ado", "Add ADO"),
         Binding("g", "include_github", "GitHub"),

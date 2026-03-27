@@ -31,7 +31,7 @@ DEFAULT_KEYBINDINGS: dict[str, str] = {
     "main.pin": "f",
     "main.filter_pinned": "ctrl+f",
     "main.add_pr": "a",
-    "main.manage_sources": "ctrl+m",
+    "main.manage_sources": "S",
     "main.manage_repos": "m",
     "main.quit": "ctrl+c",
 }

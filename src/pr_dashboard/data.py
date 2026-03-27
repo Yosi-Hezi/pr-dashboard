@@ -590,7 +590,19 @@ class PrDataStore:
             all_entries: list[dict] = []
             all_repo_discoveries: list[dict] = []
 
-            # Sync all sources concurrently
+            # Sync sources concurrently (limited to avoid overwhelming auth)
+            sem = asyncio.Semaphore(5)
+
+            async def _limited_sync(source, included_repos_only):
+                async with sem:
+                    return await self._sync_source(
+                        source,
+                        ado_clients,
+                        gh_client,
+                        excluded_repo_keys,
+                        included_repos_only,
+                    )
+
             source_tasks = []
             for source in all_sources_to_fetch:
                 is_active_source = source in active_set
@@ -599,15 +611,7 @@ class PrDataStore:
                     if not is_active_source
                     else None
                 )
-                source_tasks.append(
-                    self._sync_source(
-                        source,
-                        ado_clients,
-                        gh_client,
-                        excluded_repo_keys,
-                        included_repos_only,
-                    )
-                )
+                source_tasks.append(_limited_sync(source, included_repos_only))
             results = await asyncio.gather(*source_tasks, return_exceptions=True)
             for i, result in enumerate(results):
                 if isinstance(result, Exception):

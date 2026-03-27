@@ -20,10 +20,13 @@ It tracks your **authored PRs** and **code reviews**, showing live status for re
 | Azure DevOps (multiple orgs) | `az login` | Auto-discovers all orgs via VSSPS API |
 | GitHub | `gh auth login` | Auto-detected on first run |
 
+Sources and repos are auto-discovered on every sync. Use `sources` / `repos` CLI commands or TUI modals (`S` / `m`) to manage include/exclude lists.
+
 ```bash
-pr-dashboard register all      # auto-discover & register everything
-pr-dashboard sources            # list registered sources
-pr-dashboard unregister github  # remove a source
+pr-dashboard sources                # list sources with status
+pr-dashboard sources exclude github # exclude a source
+pr-dashboard repos                  # list repos with status
+pr-dashboard repos include ado/msazure MyRepo  # include a specific repo
 ```
 
 ### Code Review Tracking
@@ -44,13 +47,18 @@ PRs are tagged with a **role** — `author` or `reviewer` — so you can see wha
 | `Tab` | Toggle view: My PRs ↔ Reviews |
 | `r` | Refresh selected PR |
 | `Ctrl+R` | Refresh all PRs |
-| `Ctrl+S` | Full sync from all sources |
+| `Ctrl+S` | Full sync (discover sources + fetch PRs) |
 | `d` | Remove selected PR |
 | `Shift+D` | Remove all done/abandoned PRs |
 | `o` | Open PR in browser |
 | `c` | Copy PR URL to clipboard |
 | `/` | Filter by title, author, repo, ID |
+| `f` | Pin/unpin selected PR |
+| `Ctrl+F` | Toggle pinned-only filter |
 | `v` | Quick peek (description + comments) |
+| `a` | Add PR by URL |
+| `m` | Manage repos (include/exclude) |
+| `S` | Manage sources (include/exclude) |
 | `i` | Connected sources & accounts |
 | `l` | Activity log |
 | `Escape` | Clear filter / close modal |
@@ -65,7 +73,7 @@ All keybindings are **configurable** via `config.json` in the data directory. Pr
 ### CLI Commands
 
 ```
-pr-dashboard sync               # fetch from all sources
+pr-dashboard sync               # discover sources + fetch PRs
 pr-dashboard list [--mine|--reviews] [--urls] [--json]
 pr-dashboard show <id> [--json]
 pr-dashboard refresh <id>       # refresh single PR
@@ -73,9 +81,10 @@ pr-dashboard refresh --all      # refresh all
 pr-dashboard add <url>          # add PR by ADO or GitHub URL
 pr-dashboard remove <id>
 pr-dashboard clean              # remove completed/abandoned PRs
-pr-dashboard sources [all]
-pr-dashboard register {ado|github|all} [org]
-pr-dashboard unregister <source>
+pr-dashboard sources [include|exclude] [source]
+pr-dashboard repos [include|exclude] [source] [repo]
+pr-dashboard exclude <source> <repo>
+pr-dashboard include <source> <repo>
 ```
 
 ### PR Enrichment
@@ -116,7 +125,9 @@ Every PR is enriched with data from the source API:
 ### Data Persistence
 
 - Stored in `platformdirs.user_data_dir("pr-dashboard")/prs.json`
-- Schema versioned (v2) with auto-migration from v1
+- Schema versioned (v3) with structured source/repo management
+- Sources and repos use `{discovered, include, exclude}` sublists
+- Repos are qualified with source: `{"source": "ado/msazure", "repo": "MyRepo"}`
 - Composite key `(source, id)` prevents cross-source duplication
 - Async locking for concurrent operations
 
@@ -226,3 +237,41 @@ uv run pr-dashboard list --mine
 - If not → finds the repo, fetches, creates a new worktree, opens VS Code
 - Handles existing local branches gracefully (no duplicate branch errors)
 - Clear status messages for each code path in the log
+
+---
+
+## Phase 5 Changelog
+
+### Source & Repo Management (v3 Data Model)
+- **New data model**: sources and repos use `{discovered, include, exclude}` sublists instead of flat arrays
+- **Auto-discovery**: sync now discovers sources automatically (ADO orgs via VSSPS API + GitHub auth check) — no more manual `register` commands
+- **Repo tracking**: repos are discovered as a side effect of PR fetching and qualified with their source (`{"source": "ado/msazure", "repo": "MyRepo"}`)
+- **Toggle semantics**: discovered items get excluded (✗ marker), include-only items get deleted entirely on toggle
+- **Stale cleanup**: sync removes excludes for items no longer discoverable or included
+- **Included repos from excluded sources**: you can exclude a source but still track specific repos within it
+
+### TUI Modals
+- **Add PR** (`a`): add any PR by URL — shows which list it was added to (My PRs / Reviews)
+- **Manage Repos** (`m`): browse all discovered + included repos, toggle with `Space`, add new repos by typing a URL
+- **Manage Sources** (`S`): browse all discovered + included sources, toggle with `Space`
+- All modals are scrollable with consistent toggle semantics
+
+### CLI Source/Repo Commands
+- `pr-dashboard sources [include|exclude] [source]` — list or manage sources
+- `pr-dashboard repos [include|exclude] [source] [repo]` — list or manage repos
+- CLI uses idempotent include/exclude (safe to call repeatedly), TUI uses toggle semantics
+- Removed old `register` / `unregister` commands
+
+### Parallel Sync with Rate Limiting
+- Sources synced concurrently via `asyncio.gather` (from master merge)
+- Concurrency limited to 5 simultaneous sources via semaphore to prevent Azure CLI credential exhaustion
+- Animated sync spinner in status bar during sync operations
+
+### Compact Vote Display
+- Reviews column now uses grouped counts (`✓2 !3`) instead of individual symbols
+- Reduces column width for PRs with many reviewers
+
+### Bug Fixes
+- Fixed null-safety in ADO client: `.get("key", {})` doesn't protect against explicit `null` — now uses `(.get("key") or {})`
+- Fixed duplicate PR handling: `add_pr_by_url` returns whether PR was added/updated and to which list
+- All modal screens (Help, Info, Log) now scrollable
