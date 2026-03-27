@@ -144,6 +144,8 @@ class PRDashboard(App):
         self._view_mode: str = "mine"  # "all", "mine", "reviews"
         self._filter_pinned: bool = False
         self._refreshing_all: bool = False
+        self._sync_timer = None
+        self._sync_spinner_idx = 0
         self._removing_prs: set[str] = set()
         self._az_user: str | None = None
         self._gh_user: str | None = None
@@ -228,9 +230,9 @@ class PRDashboard(App):
 
         # Sync if no PRs loaded (sync includes source discovery)
         if not self.prs:
-            self.notify("Discovering sources and syncing...", timeout=10)
-            log.info("Startup: no cached PRs, running full sync")
             self._refreshing_all = True
+            self._start_sync_spinner("Discovering sources and syncing")
+            log.info("Startup: no cached PRs, running full sync")
             try:
                 await self.store.sync(
                     gh_client=gh_client if self._gh_user else None,
@@ -239,6 +241,7 @@ class PRDashboard(App):
                 self._handle_error(exc, "Sync")
             finally:
                 self._refreshing_all = False
+                self._stop_sync_spinner()
             self.load_and_display()
             self.notify(f"Ready — {len(self.prs)} PRs loaded", timeout=3)
             log.info("Startup: complete, %d PRs loaded", len(self.prs))
@@ -290,6 +293,25 @@ class PRDashboard(App):
             parts.append(f"{len(view_prs)} PRs")
 
         self.query_one("#status-bar", Static).update(" · ".join(parts))
+
+    _SYNC_FRAMES = ("◐", "◓", "◑", "◒")
+
+    def _start_sync_spinner(self, label: str = "Syncing") -> None:
+        self._sync_label = label
+        self._sync_spinner_idx = 0
+        self._update_sync_spinner()
+        self._sync_timer = self.set_interval(0.25, self._update_sync_spinner)
+
+    def _update_sync_spinner(self) -> None:
+        frame = self._SYNC_FRAMES[self._sync_spinner_idx % len(self._SYNC_FRAMES)]
+        self._sync_spinner_idx += 1
+        self.query_one("#status-bar", Static).update(f"{frame} {self._sync_label}…")
+
+    def _stop_sync_spinner(self) -> None:
+        if self._sync_timer is not None:
+            self._sync_timer.stop()
+            self._sync_timer = None
+        self._update_status_bar_accounts()
 
     def get_visible_prs(self) -> list[dict]:
         prs = sort_prs(self.prs)
@@ -559,7 +581,7 @@ class PRDashboard(App):
         if self._refreshing_all:
             return
         self._refreshing_all = True
-        self.notify("Refreshing all PRs...", timeout=5)
+        self._start_sync_spinner("Refreshing")
         self.run_worker(self._refresh_all())
 
     async def _refresh_all(self) -> None:
@@ -570,6 +592,7 @@ class PRDashboard(App):
             return
         finally:
             self._refreshing_all = False
+            self._stop_sync_spinner()
         self.load_and_display()
         self.notify(f"All PRs refreshed — {len(self.prs)} loaded", timeout=3)
 
@@ -579,7 +602,8 @@ class PRDashboard(App):
         if self._refreshing_all:
             return
         self._refreshing_all = True
-        self.notify("Syncing sources and PRs...", timeout=5)
+        active = self.store.get_active_sources()
+        self._start_sync_spinner(f"Syncing {len(active)} source(s)")
         self.run_worker(self._sync())
 
     async def _sync(self) -> None:
@@ -593,6 +617,7 @@ class PRDashboard(App):
             return
         finally:
             self._refreshing_all = False
+            self._stop_sync_spinner()
         self.load_and_display()
         self.notify(f"Synced — {len(self.prs)} PRs loaded", timeout=3)
 

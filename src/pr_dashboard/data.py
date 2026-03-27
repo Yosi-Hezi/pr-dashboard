@@ -340,6 +340,175 @@ class PrDataStore:
 
     # ── Commands ──────────────────────────────────────────────────────────
 
+    async def _sync_source(
+        self,
+        source: str,
+        ado_clients: dict[str, AdoClient] | None,
+        gh_client: GhClient | None,
+        excluded_repo_keys: set[tuple[str, str]],
+        included_repos_only: set[str] | None = None,
+    ) -> tuple[list[dict], str | None, list[dict]]:
+        """Sync a single source. Returns (entries, current_user_email, repo_discoveries)."""
+        log.info(
+            "[%s] Starting sync (included_repos=%s)...",
+            source,
+            included_repos_only,
+        )
+        entries: list[dict] = []
+        repo_discoveries: list[dict] = []
+        user_email: str | None = None
+
+        try:
+            if source.startswith("ado/"):
+                org = source.removeprefix("ado/")
+                shared = (ado_clients or {}).get(org)
+                client = shared or AdoClient(org=org)
+                try:
+                    _, user_email = await client.get_current_user()
+
+                    # Fetch authored + reviewer PRs in parallel
+                    authored_raw, review_raw = await asyncio.gather(
+                        client.list_my_prs(status="active"),
+                        client.list_my_review_prs(status="active"),
+                    )
+
+                    # Dedup: if PR appears in both, keep as author
+                    authored_ids = {pr["pullRequestId"] for pr in authored_raw}
+                    review_only = [
+                        pr
+                        for pr in review_raw
+                        if pr["pullRequestId"] not in authored_ids
+                        and not pr.get("isDraft", False)
+                        and (
+                            source,
+                            pr.get("repository", {}).get("name", ""),
+                        )
+                        not in excluded_repo_keys
+                    ]
+
+                    # If only fetching for included repos, filter both
+                    if included_repos_only is not None:
+                        authored_raw = [
+                            pr
+                            for pr in authored_raw
+                            if pr.get("repository", {}).get("name", "")
+                            in included_repos_only
+                        ]
+                        review_only = [
+                            pr
+                            for pr in review_only
+                            if pr.get("repository", {}).get("name", "")
+                            in included_repos_only
+                        ]
+
+                    enriched = await asyncio.gather(
+                        *(client.enrich_pr(pr, role="author") for pr in authored_raw),
+                        *(client.enrich_pr(pr, role="reviewer") for pr in review_only),
+                        return_exceptions=True,
+                    )
+                    for entry in enriched:
+                        if isinstance(entry, Exception):
+                            log.error("[%s] Failed to enrich PR: %s", source, entry)
+                            continue
+                        if isinstance(entry, dict):
+                            repo_name = entry.get("repoName", "")
+                            if repo_name:
+                                repo_discoveries.append(_repo_entry(source, repo_name))
+                            entries.append(entry)
+                    ok = len([e for e in enriched if not isinstance(e, Exception)])
+                    log.info(
+                        "[%s] Synced %d PRs (%d authored, %d reviews)",
+                        source,
+                        ok,
+                        len(authored_raw),
+                        len(review_only),
+                    )
+                finally:
+                    if not shared:
+                        await client.close()
+
+            elif source == "github":
+                gh = gh_client or GhClient()
+
+                # Prefetch username to avoid N redundant auth calls
+                await gh.get_username()
+
+                # Fetch authored + reviewer PRs in parallel
+                authored_prs, review_prs = await asyncio.gather(
+                    gh.list_my_prs(),
+                    gh.list_my_review_prs(),
+                )
+
+                # Dedup: if PR appears in both, keep as author
+                authored_keys = {
+                    (
+                        p.get("repository", {}).get("nameWithOwner", ""),
+                        p["number"],
+                    )
+                    for p in authored_prs
+                }
+                review_only = [
+                    p
+                    for p in review_prs
+                    if (
+                        p.get("repository", {}).get("nameWithOwner", ""),
+                        p["number"],
+                    )
+                    not in authored_keys
+                    and not p.get("isDraft", False)
+                    and (
+                        source,
+                        p.get("repository", {}).get("name", ""),
+                    )
+                    not in excluded_repo_keys
+                ]
+
+                # If only fetching for included repos
+                if included_repos_only is not None:
+                    authored_prs = [
+                        p
+                        for p in authored_prs
+                        if p.get("repository", {}).get("name", "")
+                        in included_repos_only
+                    ]
+                    review_only = [
+                        p
+                        for p in review_only
+                        if p.get("repository", {}).get("name", "")
+                        in included_repos_only
+                    ]
+
+                enriched = await asyncio.gather(
+                    *(gh.enrich_pr(pr, role="author") for pr in authored_prs),
+                    *(gh.enrich_pr(pr, role="reviewer") for pr in review_only),
+                    return_exceptions=True,
+                )
+                for entry in enriched:
+                    if isinstance(entry, Exception):
+                        log.error("[github] Failed to enrich PR: %s", entry)
+                        continue
+                    if isinstance(entry, dict):
+                        repo_name = entry.get("repoName", "")
+                        if repo_name:
+                            repo_discoveries.append(_repo_entry(source, repo_name))
+                        entries.append(entry)
+                ok = len([e for e in enriched if not isinstance(e, Exception)])
+                log.info(
+                    "[github] Synced %d PRs (%d authored, %d reviews)",
+                    ok,
+                    len(authored_prs),
+                    len(review_only),
+                )
+
+        except (AdoApiError, AdoAuthError) as exc:
+            log.error("[%s] Sync failed: %s", source, exc)
+        except GhApiError as exc:
+            log.error("[%s] GitHub sync failed: %s", source, exc)
+        except Exception as exc:
+            log.error("[%s] Unexpected error: %s", source, exc)
+
+        return entries, user_email, repo_discoveries
+
     async def sync(
         self,
         ado_clients: dict[str, AdoClient] | None = None,
@@ -421,6 +590,8 @@ class PrDataStore:
             all_entries: list[dict] = []
             all_repo_discoveries: list[dict] = []
 
+            # Sync all sources concurrently
+            source_tasks = []
             for source in all_sources_to_fetch:
                 is_active_source = source in active_set
                 included_repos_only = (
@@ -428,171 +599,29 @@ class PrDataStore:
                     if not is_active_source
                     else None
                 )
-                log.info(
-                    "[%s] Syncing (active=%s, included_repos=%s)...",
-                    source,
-                    is_active_source,
-                    included_repos_only,
+                source_tasks.append(
+                    self._sync_source(
+                        source,
+                        ado_clients,
+                        gh_client,
+                        excluded_repo_keys,
+                        included_repos_only,
+                    )
                 )
-                try:
-                    if source.startswith("ado/"):
-                        org = source.removeprefix("ado/")
-                        shared = (ado_clients or {}).get(org)
-                        client = shared or AdoClient(org=org)
-                        try:
-                            _, user_email = await client.get_current_user()
-                            data["currentUser"] = user_email
-
-                            authored_raw, review_raw = await asyncio.gather(
-                                client.list_my_prs(status="active"),
-                                client.list_my_review_prs(status="active"),
-                            )
-
-                            authored_ids = {pr["pullRequestId"] for pr in authored_raw}
-                            review_only = [
-                                pr
-                                for pr in review_raw
-                                if pr["pullRequestId"] not in authored_ids
-                                and not pr.get("isDraft", False)
-                                and (
-                                    source,
-                                    pr.get("repository", {}).get("name", ""),
-                                )
-                                not in excluded_repo_keys
-                            ]
-
-                            # If only fetching for included repos, filter both
-                            if included_repos_only is not None:
-                                authored_raw = [
-                                    pr
-                                    for pr in authored_raw
-                                    if pr.get("repository", {}).get("name", "")
-                                    in included_repos_only
-                                ]
-                                review_only = [
-                                    pr
-                                    for pr in review_only
-                                    if pr.get("repository", {}).get("name", "")
-                                    in included_repos_only
-                                ]
-
-                            entries = await asyncio.gather(
-                                *(
-                                    client.enrich_pr(pr, role="author")
-                                    for pr in authored_raw
-                                ),
-                                *(
-                                    client.enrich_pr(pr, role="reviewer")
-                                    for pr in review_only
-                                ),
-                                return_exceptions=True,
-                            )
-                            for entry in entries:
-                                if isinstance(entry, Exception):
-                                    log.error(
-                                        "[%s] Failed to enrich PR: %s",
-                                        source,
-                                        entry,
-                                    )
-                                    continue
-                                if isinstance(entry, dict):
-                                    repo_name = entry.get("repoName", "")
-                                    if repo_name:
-                                        all_repo_discoveries.append(
-                                            _repo_entry(source, repo_name)
-                                        )
-                                    all_entries.append(entry)
-                            ok = len(
-                                [e for e in entries if not isinstance(e, Exception)]
-                            )
-                            log.info(
-                                "[%s] Synced %d PRs (%d authored, %d reviews)",
-                                source,
-                                ok,
-                                len(authored_raw),
-                                len(review_only),
-                            )
-                        finally:
-                            if not shared:
-                                await client.close()
-
-                    elif source == "github":
-                        gh = gh_client or GhClient()
-                        await gh.get_username()
-
-                        authored_prs, review_prs = await asyncio.gather(
-                            gh.list_my_prs(),
-                            gh.list_my_review_prs(),
-                        )
-
-                        authored_keys = {
-                            (
-                                p.get("repository", {}).get("nameWithOwner", ""),
-                                p["number"],
-                            )
-                            for p in authored_prs
-                        }
-                        review_only = [
-                            p
-                            for p in review_prs
-                            if (
-                                p.get("repository", {}).get("nameWithOwner", ""),
-                                p["number"],
-                            )
-                            not in authored_keys
-                            and not p.get("isDraft", False)
-                            and (
-                                source,
-                                p.get("repository", {}).get("name", ""),
-                            )
-                            not in excluded_repo_keys
-                        ]
-
-                        # If only fetching for included repos
-                        if included_repos_only is not None:
-                            authored_prs = [
-                                p
-                                for p in authored_prs
-                                if p.get("repository", {}).get("name", "")
-                                in included_repos_only
-                            ]
-                            review_only = [
-                                p
-                                for p in review_only
-                                if p.get("repository", {}).get("name", "")
-                                in included_repos_only
-                            ]
-
-                        entries = await asyncio.gather(
-                            *(gh.enrich_pr(pr, role="author") for pr in authored_prs),
-                            *(gh.enrich_pr(pr, role="reviewer") for pr in review_only),
-                            return_exceptions=True,
-                        )
-                        for entry in entries:
-                            if isinstance(entry, Exception):
-                                log.error("[github] Failed to enrich PR: %s", entry)
-                                continue
-                            if isinstance(entry, dict):
-                                repo_name = entry.get("repoName", "")
-                                if repo_name:
-                                    all_repo_discoveries.append(
-                                        _repo_entry(source, repo_name)
-                                    )
-                                all_entries.append(entry)
-                        ok = len([e for e in entries if not isinstance(e, Exception)])
-                        log.info(
-                            "[github] Synced %d PRs (%d authored, %d reviews)",
-                            ok,
-                            len(authored_prs),
-                            len(review_only),
-                        )
-
-                except (AdoApiError, AdoAuthError) as exc:
-                    log.error("[%s] Sync failed: %s", source, exc)
-                except GhApiError as exc:
-                    log.error("[%s] GitHub sync failed: %s", source, exc)
-                except Exception as exc:
-                    log.error("[%s] Unexpected error: %s", source, exc)
+            results = await asyncio.gather(*source_tasks, return_exceptions=True)
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    log.error(
+                        "[%s] Unexpected error: %s",
+                        all_sources_to_fetch[i],
+                        result,
+                    )
+                elif isinstance(result, tuple):
+                    entries, user_email, repo_disc = result
+                    all_entries.extend(entries)
+                    all_repo_discoveries.extend(repo_disc)
+                    if user_email:
+                        data["currentUser"] = user_email
 
             # ── Phase 4: Update repos.discovered (dedup) ──────────────
             seen_repos: set[tuple[str, str]] = set()
