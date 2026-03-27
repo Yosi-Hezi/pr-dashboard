@@ -590,29 +590,53 @@ class PrDataStore:
             all_entries: list[dict] = []
             all_repo_discoveries: list[dict] = []
 
-            # Sync sources concurrently (limited to avoid overwhelming auth)
-            sem = asyncio.Semaphore(5)
+            # Get one ADO token upfront and share across all org clients
+            # so we don't spawn N concurrent `az` subprocesses.
+            ado_token: str | None = None
+            ado_orgs = {
+                s.removeprefix("ado/")
+                for s in all_sources_to_fetch
+                if s.startswith("ado/")
+            }
+            if ado_orgs:
+                try:
+                    from azure.identity import AzureCliCredential
 
-            async def _limited_sync(source, included_repos_only):
-                async with sem:
-                    return await self._sync_source(
-                        source,
-                        ado_clients,
-                        gh_client,
-                        excluded_repo_keys,
-                        included_repos_only,
+                    tok = await asyncio.to_thread(
+                        AzureCliCredential().get_token,
+                        "499b84ac-1321-427f-aa17-267ca6975798/.default",
                     )
+                    ado_token = tok.token
+                except Exception as exc:
+                    log.warning("Failed to pre-fetch ADO token: %s", exc)
 
-            source_tasks = []
-            for source in all_sources_to_fetch:
-                is_active_source = source in active_set
-                included_repos_only = (
-                    included_repo_by_source.get(source)
-                    if not is_active_source
-                    else None
-                )
-                source_tasks.append(_limited_sync(source, included_repos_only))
-            results = await asyncio.gather(*source_tasks, return_exceptions=True)
+            shared_ado: dict[str, AdoClient] = {
+                org: AdoClient(org=org, token=ado_token) for org in ado_orgs
+            }
+
+            try:
+                source_tasks = []
+                for source in all_sources_to_fetch:
+                    is_active_source = source in active_set
+                    included_repos_only = (
+                        included_repo_by_source.get(source)
+                        if not is_active_source
+                        else None
+                    )
+                    source_tasks.append(
+                        self._sync_source(
+                            source,
+                            shared_ado,
+                            gh_client,
+                            excluded_repo_keys,
+                            included_repos_only,
+                        )
+                    )
+                results = await asyncio.gather(*source_tasks, return_exceptions=True)
+            finally:
+                for client in shared_ado.values():
+                    await client.close()
+
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
                     log.error(

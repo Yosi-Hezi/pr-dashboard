@@ -39,11 +39,17 @@ class AdoApiError(Exception):
 class AdoClient:
     """Async Azure DevOps REST client."""
 
-    def __init__(self, org: str = DEFAULT_ORG, project: str = DEFAULT_PROJECT) -> None:
+    def __init__(
+        self,
+        org: str = DEFAULT_ORG,
+        project: str = DEFAULT_PROJECT,
+        token: str | None = None,
+    ) -> None:
         self.org = org
         self.project = project
         self.base_url = f"https://dev.azure.com/{org}"
         self._credential = AzureCliCredential()
+        self._pre_token = token
         self._http: httpx.AsyncClient | None = None
         self._client_lock = asyncio.Lock()
         self._user_id: str | None = None
@@ -58,9 +64,15 @@ class AdoClient:
     async def _get_client(self) -> httpx.AsyncClient:
         async with self._client_lock:
             if self._http is None or self._http.is_closed:
-                token = await asyncio.to_thread(self._credential.get_token, ADO_SCOPE)
+                if self._pre_token:
+                    bearer = self._pre_token
+                else:
+                    tok = await asyncio.to_thread(
+                        self._credential.get_token, ADO_SCOPE
+                    )
+                    bearer = tok.token
                 self._http = httpx.AsyncClient(
-                    headers={"Authorization": f"Bearer {token.token}"},
+                    headers={"Authorization": f"Bearer {bearer}"},
                     timeout=30.0,
                 )
                 log.debug("HTTP client created with Bearer token")
