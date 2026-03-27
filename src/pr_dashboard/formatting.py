@@ -96,16 +96,19 @@ def format_reviews(reviews: list, exclude_vote: str = "") -> str:
     if not parts:
         return ""
 
-    # Group consecutive identical symbols into compact counts
+    # Group by symbol (total count, not just consecutive)
+    from collections import Counter
+
+    counts = Counter(parts)
+    # Fixed order: approved, required-pending, changes-requested, rejected
+    order = ["✓", "!", "↻", "✗"]
     grouped = []
-    i = 0
-    while i < len(parts):
-        sym = parts[i]
-        count = 1
-        while i + count < len(parts) and parts[i + count] == sym:
-            count += 1
-        grouped.append(sym if count == 1 else f"{sym}{count}")
-        i += count
+    for sym in order:
+        c = counts.get(sym, 0)
+        if c == 1:
+            grouped.append(sym)
+        elif c > 1:
+            grouped.append(f"{sym}{c}")
 
     return " ".join(grouped)
 

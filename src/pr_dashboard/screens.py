@@ -459,7 +459,7 @@ class ManageSourcesScreen(ModalScreen):
                 classes="sources-hidden",
             )
             yield Static(
-                "[dim]Space: Toggle · a: Add ADO · g: GitHub · Ctrl+M/Esc: Close[/]"
+                "[dim]Space: Toggle · a: Add ADO · g: GitHub · S/Esc: Close[/]"
             )
 
     def on_mount(self) -> None:
