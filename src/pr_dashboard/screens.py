@@ -412,7 +412,6 @@ class ManageSourcesScreen(ModalScreen):
         Binding("S", "close", "Close"),
         Binding("space", "toggle_source", "Toggle"),
         Binding("a", "show_add_ado", "Add ADO"),
-        Binding("g", "include_github", "GitHub"),
         Binding("tab", "noop", "", show=False, priority=True),
     ]
 
@@ -459,7 +458,7 @@ class ManageSourcesScreen(ModalScreen):
                 classes="sources-hidden",
             )
             yield Static(
-                "[dim]Space: Toggle · a: Add ADO · g: GitHub · S/Esc: Close[/]"
+                "[dim]Space: Toggle · a: Add ADO · S/Esc: Close[/]"
             )
 
     def on_mount(self) -> None:
@@ -507,10 +506,6 @@ class ManageSourcesScreen(ModalScreen):
         inp = self.query_one("#ado-org-input", Input)
         inp.remove_class("sources-hidden")
         inp.focus()
-
-    def action_include_github(self) -> None:
-        self._store.include_source("github")
-        self._refresh_list()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "ado-org-input":
