@@ -312,6 +312,20 @@ uv run pr-dashboard list --mine
 - Indicates the author has responded to your feedback and the thread may need re-review
 - Available as row rule condition (`myCommentPending`), column (`sig_myCommentPending`), and thread count (`sig_myPendingThreads`)
 
+### CLI Consolidation
+- `refresh` command removed — consolidated into `sync`:
+  - `sync` — full sync with source discovery
+  - `sync --refresh` — refresh tracked PRs (no discovery)
+  - `sync <id>` — refresh a specific PR
+- `list --sync` — refresh tracked PRs before listing
+
+### Auto-Sync
+- `list` command automatically refreshes or syncs when data is stale
+- Auto-refresh: triggers after 30 min (default), uses latest of sync/refresh timestamps
+- Auto-sync: triggers after 24h (default), uses last sync timestamp
+- Sync checked first to prevent double-run (refresh skipped if sync triggers)
+- Configurable via `sync` section: `auto_refresh_enabled`, `auto_refresh_interval`, `auto_sync_enabled`, `auto_sync_interval`
+
 ### Code Cleanup
 - Removed legacy fallback in `refresh()` that tried default ADO org for sourceless PRs
 - Removed 3 unused variable assignments (ruff F841: `ado_client.py`, `test_config.py`)

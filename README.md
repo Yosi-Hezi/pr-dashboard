@@ -64,6 +64,7 @@ pr-dashboard list --reviews  # list reviews assigned to you
 | `m` | Manage repos (include/exclude) |
 | `M` | Manage sources (include/exclude) |
 | `i` | Connected sources & accounts |
+| `R` | Row highlighting rules |
 | `l` | Activity log |
 | `Esc` | Clear filter / close modal |
 
@@ -91,6 +92,8 @@ Toggle behavior:
 - Discovered items get excluded (✗ marker) — they stay in the list
 - Include-only items get deleted entirely (disappear from the list)
 
+> **Note:** excluding a source or repo only removes **review** PRs from the dashboard. Your own authored PRs are always retained regardless of exclusion settings.
+
 ### CLI Management
 
 ```bash
@@ -115,11 +118,15 @@ pr-dashboard sync                           # discover sources + fetch PRs
 pr-dashboard sync --refresh                 # refresh tracked PRs (no discovery)
 pr-dashboard sync <id>                      # refresh a specific PR
 pr-dashboard list [--mine|--reviews] [--urls] [--json]
+pr-dashboard list --sync                    # refresh before listing
 pr-dashboard show <id> [--json]
 pr-dashboard add <url>                      # add PR by ADO or GitHub URL
 pr-dashboard remove <id>
 pr-dashboard clean                          # remove completed/abandoned
-pr-dashboard config                         # show config file location
+pr-dashboard config show                    # print effective merged config
+pr-dashboard config defaults                # print full default config
+pr-dashboard config edit                    # open config.json in $EDITOR
+pr-dashboard config reset                   # reset to defaults (creates backup)
 pr-dashboard sources [include|exclude] [source]
 pr-dashboard repos [include|exclude] [source] [repo]
 pr-dashboard exclude <source> <repo>        # shortcut for repos exclude
@@ -189,6 +196,46 @@ Available rule IDs: `conflicts`, `author-comments`, `reviewer-required`, `review
 
 Run `pr-dashboard config defaults` to see the full default configuration including all rules.
 
+### Columns
+
+The default columns include **Action** — a short recommended action from the matched row rule (e.g., "Fix conflicts", "Review (required)").
+
+12 optional signal columns are available via `display.columns` config:
+
+`sig_role`, `sig_isDraft`, `sig_mergeStatus`, `sig_myVote`, `sig_isRequired`, `sig_hasActiveComments`, `sig_allCommentsResolved`, `sig_allRequiredApproved`, `sig_checksPass`, `sig_myCommentPending`, `sig_myPendingThreads`
+
+```json
+{
+  "display": {
+    "columns": {
+      "reviews": ["pin", "status", "repo", "id", "title", "me", "votes", "checks", "comments", "action", "sig_myCommentPending"]
+    }
+  }
+}
+```
+
+### Auto-Sync
+
+The `list` command automatically refreshes or syncs data when it becomes stale:
+
+- **Auto-refresh** (default: 30 min) — re-fetches tracked PRs before listing
+- **Auto-sync** (default: 24h) — runs full source discovery + fetch before listing
+
+Sync is checked first; if it triggers, refresh is skipped (no double-run).
+
+```json
+{
+  "sync": {
+    "auto_refresh_enabled": true,
+    "auto_refresh_interval": 30,
+    "auto_sync_enabled": true,
+    "auto_sync_interval": 1440
+  }
+}
+```
+
+Set `*_enabled` to `false` to disable. Intervals are in minutes (must be positive integers).
+
 ## Features
 
 - **Multi-source**: Azure DevOps (multiple orgs) + GitHub side-by-side
@@ -203,6 +250,10 @@ Run `pr-dashboard config defaults` to see the full default configuration includi
 - **Animated sync spinner**: visual feedback during sync operations
 - **Parallel sync**: sources synced concurrently with rate limiting
 - **Extensible**: run custom scripts with PR context via hotkeys
+- **Signal-based row rules**: 9 configurable rules with overlay merging
+- **Action column**: shows recommended action from matched rule
+- **Auto-sync**: stale data automatically refreshed before listing
+- **Config CLI**: show, edit, reset config; view defaults
 
 ## Development
 
