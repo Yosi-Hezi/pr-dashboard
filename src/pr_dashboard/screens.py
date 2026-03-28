@@ -210,12 +210,15 @@ class RowRulesScreen(ModalScreen):
                 desc = rule.get("description", "")
                 if desc:
                     lines.append(f"      [bold yellow]→ {desc}[/]")
+                action = rule.get("action", "")
+                if action:
+                    lines.append(f"      [dim]Column: {action}[/]")
 
             lines.append("")
             lines.append(
                 "[dim]Available conditions: role, status, isDraft, mergeStatus, myVote,\n"
                 "isRequiredReviewer, hasActiveComments, allCommentsResolved,\n"
-                "allRequiredApproved, checksPass, isPinned[/]"
+                "allRequiredApproved, checksPass, isPinned, myCommentPending[/]"
             )
 
         with Vertical(id="rules-dialog"):

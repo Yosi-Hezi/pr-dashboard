@@ -218,7 +218,7 @@ def format_status_label(status: str, pr: dict | None = None) -> str:
     return f"{symbol} {label}"
 
 
-def evaluate_pr_conditions(pr: dict) -> dict:
+def evaluate_pr_conditions(pr: dict, *, current_user: str = "") -> dict:
     """Compute condition values from a PR for rule matching."""
     status = pr.get("status", "")
     _, label = _derive_status(status, pr)
@@ -226,6 +226,23 @@ def evaluate_pr_conditions(pr: dict) -> dict:
     required = [r for r in reviews if r.get("isRequired")]
     comments_active = pr.get("commentsActive") or 0
     comments_total = pr.get("commentsTotal") or 0
+
+    # Count threads where current user participated but last reply is from someone else
+    my_pending_threads = 0
+    if current_user:
+        for thread in pr.get("threads", []):
+            comments = thread.get("comments", [])
+            if not comments:
+                continue
+            user_participated = any(
+                c.get("author", "").lower() == current_user.lower()
+                for c in comments
+            )
+            if user_participated:
+                last_author = comments[-1].get("author", "")
+                if last_author.lower() != current_user.lower():
+                    my_pending_threads += 1
+
     return {
         "role": pr.get("role", "author"),
         "status": label,
@@ -243,10 +260,12 @@ def evaluate_pr_conditions(pr: dict) -> dict:
             and pr.get("requiredPass") == pr.get("requiredTotal")
         ),
         "isPinned": bool(pr.get("pinned")),
+        "myCommentPending": my_pending_threads > 0,
+        "myPendingThreads": my_pending_threads,
     }
 
 
-def pr_row_style(pr: dict, rules: list[dict] | None = None) -> tuple[Style | None, dict | None]:
+def pr_row_style(pr: dict, rules: list[dict] | None = None, current_user: str = "") -> tuple[Style | None, dict | None]:
     """Return (row_style, matched_rule) based on configurable signal rules.
 
     Each rule: 'conditions' dict (all must match), plus style keys:
@@ -258,7 +277,7 @@ def pr_row_style(pr: dict, rules: list[dict] | None = None) -> tuple[Style | Non
         from .config import DEFAULT_DISPLAY
         rules = DEFAULT_DISPLAY["row_rules"]
 
-    pr_conds = evaluate_pr_conditions(pr)
+    pr_conds = evaluate_pr_conditions(pr, current_user=current_user)
 
     for rule in rules:
         conditions = rule.get("conditions", {})
@@ -340,6 +359,52 @@ def get_cell_value(
             return format_time_ago(pr.get("lastLoaded"))
         case "source":
             return format_source(pr.get("source", ""))
+        case "action":
+            from .config import DEFAULT_DISPLAY
+
+            rules = (display or DEFAULT_DISPLAY).get("row_rules", [])
+            current_user = pr.get("currentUserName", "")
+            _style, matched_rule = pr_row_style(pr, rules=rules, current_user=current_user)
+            if matched_rule and matched_rule.get("action"):
+                return truncate(matched_rule["action"], widths.get("action", 20), suffix)
+            return ""
+        case "sig_role":
+            return pr.get("role", "author")
+        case "sig_isDraft":
+            return "✓" if pr.get("isDraft") else ""
+        case "sig_mergeStatus":
+            ms = pr.get("mergeStatus", "")
+            return "⚠" if ms == "conflicts" else ms if ms else ""
+        case "sig_myVote":
+            vote = pr.get("myVote", "NoVote")
+            return VOTE_EMOJI.get(vote, vote) if vote != "NoVote" else ""
+        case "sig_isRequired":
+            return "✓" if pr.get("isRequiredReviewer") else ""
+        case "sig_hasActiveComments":
+            return "✓" if (pr.get("commentsActive") or 0) > 0 else ""
+        case "sig_allCommentsResolved":
+            active = pr.get("commentsActive") or 0
+            total = pr.get("commentsTotal") or 0
+            return "✓" if active == 0 and total > 0 else ""
+        case "sig_allRequiredApproved":
+            reviews = pr.get("reviews", [])
+            required = [r for r in reviews if r.get("isRequired")]
+            if required and all(r.get("vote") in ("Approved", "ApprovedWithSuggestions") for r in required):
+                return "✓"
+            return ""
+        case "sig_checksPass":
+            rp = pr.get("requiredPass")
+            rt = pr.get("requiredTotal")
+            return "✓" if rp is not None and rp == rt else ""
+        case "sig_myCommentPending":
+            current_user = pr.get("currentUserName", "")
+            conds = evaluate_pr_conditions(pr, current_user=current_user)
+            return "✓" if conds.get("myCommentPending") else ""
+        case "sig_myPendingThreads":
+            current_user = pr.get("currentUserName", "")
+            conds = evaluate_pr_conditions(pr, current_user=current_user)
+            count = conds.get("myPendingThreads", 0)
+            return str(count) if count > 0 else ""
         case _:
             return ""
 

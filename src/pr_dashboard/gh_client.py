@@ -455,6 +455,7 @@ class GhClient:
             "mergeStatus": detail.get("mergeable_state", ""),
             "description": detail.get("body", ""),
             "lastLoaded": datetime.now(UTC).isoformat(),
+            "currentUserName": username or "",
             **check_stats,
             **comment_stats,
         }

@@ -407,6 +407,7 @@ class AdoClient:
         reviews = []
         my_vote = "NoVote"
         is_required_reviewer = False
+        current_user_name = ""
         for r in ado_pr.get("reviewers", []):
             vote = int(r.get("vote", 0))
             vote_label = VOTE_LABELS.get(vote, "Unknown")
@@ -422,6 +423,7 @@ class AdoClient:
             if reviewer_email.lower() == user_email.lower():
                 my_vote = vote_label
                 is_required_reviewer = required
+                current_user_name = r.get("displayName", "")
 
         # lastUpdated priority: closedDate > lastMergeSourceCommit.committer.date > creationDate
         last_updated = (
@@ -465,6 +467,7 @@ class AdoClient:
             "creationDate": ado_pr.get("creationDate"),
             "lastUpdated": last_updated,
             "lastLoaded": datetime.now(UTC).isoformat(),
+            "currentUserName": current_user_name or entry["author"],
         }
 
         # Enrich with policies, threads, and work items (parallel)

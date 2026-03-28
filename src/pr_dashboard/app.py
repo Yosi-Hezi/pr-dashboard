@@ -351,7 +351,7 @@ class PRDashboard(App):
                 for c in columns
             ]
             table.add_row(*row_data, key=row_key)
-            style, _matched = pr_row_style(pr, rules=row_rules)
+            style, _matched = pr_row_style(pr, rules=row_rules, current_user=pr.get("currentUserName", ""))
             if style:
                 row_styles[idx] = style
         table.set_row_styles(row_styles)
@@ -541,7 +541,7 @@ class PRDashboard(App):
 
         # Signal: show which row rule matched (if any)
         from .formatting import evaluate_pr_conditions
-        pr_conds = evaluate_pr_conditions(pr)
+        pr_conds = evaluate_pr_conditions(pr, current_user=pr.get("currentUserName", ""))
         signal_parts = []
         if pr_conds.get("hasActiveComments"):
             signal_parts.append("💬 Active comments")
@@ -560,7 +560,7 @@ class PRDashboard(App):
 
         # Show matched rule description (recommended action) if present
         row_rules = self._display_cfg.get("row_rules", [])
-        _style, matched_rule = pr_row_style(pr, rules=row_rules)
+        _style, matched_rule = pr_row_style(pr, rules=row_rules, current_user=pr.get("currentUserName", ""))
         if matched_rule and matched_rule.get("description"):
             parts.append(f"[bold yellow]→ {esc(matched_rule['description'])}[/]")
 

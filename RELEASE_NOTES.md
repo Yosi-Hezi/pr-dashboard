@@ -295,12 +295,26 @@ uv run pr-dashboard list --mine
 ### Configurable Row Rules
 - New `row_rules` config replaces `row_colors` for signal-based row styling
 - Each rule has `conditions` (all must match) and style properties (`color`, `bold`, `italic`, `strikethrough`)
+- Rules can include `description` (shown in detail panel) and `action` (shown in Action column)
 - First matching rule wins
-- 11 computed conditions available: `role`, `status`, `isDraft`, `mergeStatus`, `myVote`, `isRequiredReviewer`, `hasActiveComments`, `allCommentsResolved`, `allRequiredApproved`, `checksPass`, `isPinned`
-- 8 default rules ship out of the box (conflicts → red italic, author with comments → amber bold, etc.)
+- 13 computed conditions available: `role`, `status`, `isDraft`, `mergeStatus`, `myVote`, `isRequiredReviewer`, `hasActiveComments`, `allCommentsResolved`, `allRequiredApproved`, `checksPass`, `isPinned`, `myCommentPending`, `myPendingThreads`
+- 9 default rules ship out of the box (conflicts → red italic, author with comments → amber bold, re-review when author replied, etc.)
 - Legacy `row_colors` config auto-converted to new format for backward compatibility
-- Help screen (`?`) now shows active rules legend with condition/style details
+- Dedicated Row Rules screen (`R`) shows rules with color swatches, conditions, styles, descriptions, and column actions
 - Signal summary line added to detail panel
+
+### Action Column & Signal Columns
+- New **Action** column (default, after Fetched) — shows short recommended action from matched row rule
+- 12 optional signal columns available for users to add via `display.columns` config:
+  - `sig_role`, `sig_isDraft`, `sig_mergeStatus`, `sig_myVote`, `sig_isRequired`
+  - `sig_hasActiveComments`, `sig_allCommentsResolved`, `sig_allRequiredApproved`, `sig_checksPass`
+  - `sig_myCommentPending` (📩), `sig_myPendingThreads` (📩#)
+- Boolean signals display as ✓/blank; enum signals use existing symbols (vote, status)
+
+### Comment Tracking — "My Comment Pending" Signal
+- New signal: detects active threads where you participated but the last reply is from someone else
+- Indicates the author has responded to your feedback and the thread may need re-review
+- Available as row rule condition (`myCommentPending`), column (`sig_myCommentPending`), and thread count (`sig_myPendingThreads`)
 
 ### Code Cleanup
 - Removed legacy fallback in `refresh()` that tried default ADO org for sourceless PRs

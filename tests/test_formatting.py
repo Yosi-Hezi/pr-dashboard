@@ -488,6 +488,63 @@ class TestEvaluatePrConditions:
         assert conds["myVote"] == "Approved"
         assert conds["isRequiredReviewer"] is True
 
+    def test_my_comment_pending_basic(self):
+        pr = {
+            "status": "active", "reviews": [],
+            "threads": [
+                {"comments": [
+                    {"author": "Me", "text": "fix this"},
+                    {"author": "Author", "text": "done"},
+                ]}
+            ],
+        }
+        conds = evaluate_pr_conditions(pr, current_user="Me")
+        assert conds["myCommentPending"] is True
+        assert conds["myPendingThreads"] == 1
+
+    def test_my_comment_pending_last_is_me(self):
+        pr = {
+            "status": "active", "reviews": [],
+            "threads": [
+                {"comments": [
+                    {"author": "Author", "text": "question"},
+                    {"author": "Me", "text": "answer"},
+                ]}
+            ],
+        }
+        conds = evaluate_pr_conditions(pr, current_user="Me")
+        assert conds["myCommentPending"] is False
+        assert conds["myPendingThreads"] == 0
+
+    def test_my_comment_pending_no_current_user(self):
+        pr = {
+            "status": "active", "reviews": [],
+            "threads": [{"comments": [{"author": "Me", "text": "x"}, {"author": "Other", "text": "y"}]}],
+        }
+        conds = evaluate_pr_conditions(pr)
+        assert conds["myCommentPending"] is False
+        assert conds["myPendingThreads"] == 0
+
+    def test_my_comment_pending_multiple_threads(self):
+        pr = {
+            "status": "active", "reviews": [],
+            "threads": [
+                {"comments": [{"author": "Me", "text": "a"}, {"author": "Dev", "text": "b"}]},
+                {"comments": [{"author": "Me", "text": "c"}, {"author": "Dev", "text": "d"}]},
+                {"comments": [{"author": "Other", "text": "e"}]},
+            ],
+        }
+        conds = evaluate_pr_conditions(pr, current_user="Me")
+        assert conds["myPendingThreads"] == 2
+
+    def test_my_comment_pending_case_insensitive(self):
+        pr = {
+            "status": "active", "reviews": [],
+            "threads": [{"comments": [{"author": "me", "text": "x"}, {"author": "Other", "text": "y"}]}],
+        }
+        conds = evaluate_pr_conditions(pr, current_user="ME")
+        assert conds["myCommentPending"] is True
+
 
 # ── get_cell_value ───────────────────────────────────────────────
 
@@ -507,3 +564,38 @@ class TestGetCellValue:
 
     def test_unknown_column(self):
         assert get_cell_value("nonexistent", {}) == ""
+
+    def test_action_column_match(self):
+        rules = [{"conditions": {"status": "Active"}, "color": "#111111", "action": "Do stuff"}]
+        display = {"column_widths": {"action": 20}, "truncation_suffix": "..", "row_rules": rules}
+        pr = {"status": "active", "reviews": []}
+        assert get_cell_value("action", pr, display=display) == "Do stuff"
+
+    def test_action_column_no_match(self):
+        rules = [{"conditions": {"status": "Completed"}, "color": "#111111", "action": "Done"}]
+        display = {"column_widths": {"action": 20}, "truncation_suffix": "..", "row_rules": rules}
+        pr = {"status": "active", "reviews": []}
+        assert get_cell_value("action", pr, display=display) == ""
+
+    def test_sig_role_column(self):
+        assert get_cell_value("sig_role", {"role": "reviewer"}) == "reviewer"
+        assert get_cell_value("sig_role", {}) == "author"
+
+    def test_sig_isDraft_column(self):
+        assert get_cell_value("sig_isDraft", {"isDraft": True}) == "✓"
+        assert get_cell_value("sig_isDraft", {"isDraft": False}) == ""
+
+    def test_sig_isRequired_column(self):
+        assert get_cell_value("sig_isRequired", {"isRequiredReviewer": True}) == "✓"
+        assert get_cell_value("sig_isRequired", {}) == ""
+
+    def test_sig_checksPass_column(self):
+        assert get_cell_value("sig_checksPass", {"requiredPass": 3, "requiredTotal": 3}) == "✓"
+        assert get_cell_value("sig_checksPass", {"requiredPass": 2, "requiredTotal": 3}) == ""
+
+    def test_sig_myCommentPending_column(self):
+        pr = {
+            "status": "active", "reviews": [], "currentUserName": "Me",
+            "threads": [{"comments": [{"author": "Me", "text": "x"}, {"author": "Other", "text": "y"}]}],
+        }
+        assert get_cell_value("sig_myCommentPending", pr) == "✓"
