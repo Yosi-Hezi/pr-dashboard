@@ -467,7 +467,7 @@ class AdoClient:
             "creationDate": ado_pr.get("creationDate"),
             "lastUpdated": last_updated,
             "lastLoaded": datetime.now(UTC).isoformat(),
-            "currentUserName": current_user_name or entry["author"],
+            "currentUserName": current_user_name or ado_pr.get("createdBy", {}).get("displayName", ""),
         }
 
         # Enrich with policies, threads, and work items (parallel)
