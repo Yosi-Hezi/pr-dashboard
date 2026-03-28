@@ -1,0 +1,441 @@
+"""Shared formatting helpers for PR Dashboard (TUI + CLI)."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+from rich.markup import escape
+from rich.style import Style
+
+
+def pr_key(pr: dict) -> str:
+    """Composite key for a PR: 'source:id'. Unique across sources."""
+    return f"{pr.get('source', '')}:{pr.get('id', 0)}"
+
+
+def truncate(text: str, max_len: int, suffix: str = "..") -> str:
+    """Truncate text with suffix if it exceeds max_len."""
+    if len(text) <= max_len:
+        return text
+    if max_len <= len(suffix):
+        return suffix[:max_len]
+    return text[: max_len - len(suffix)] + suffix
+
+
+def esc(text: str) -> str:
+    """Escape Rich markup in API-sourced strings."""
+    return escape(str(text))
+
+
+def format_time_ago(iso_date: str | None) -> str:
+    if not iso_date:
+        return "?"
+    try:
+        dt = datetime.fromisoformat(iso_date)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        diff = datetime.now(UTC) - dt
+        minutes = diff.total_seconds() / 60
+        if minutes < 1:
+            return "just now"
+        if minutes < 60:
+            return f"{int(minutes)}m ago"
+        hours = minutes / 60
+        if hours < 24:
+            return f"{int(hours)}h ago"
+        days = hours / 24
+        if days < 7:
+            return f"{int(days)}d ago"
+        return f"{int(days / 7)}w ago"
+    except Exception:
+        return "?"
+
+
+VOTE_EMOJI = {
+    "Approved": "✓",
+    "ApprovedWithSuggestions": "✓",
+    "WaitingForAuthor": "↻",
+    "Rejected": "✗",
+}
+
+
+def format_my_vote(my_vote: str, is_required: bool) -> str:
+    """Format user's own vote for the Me column (Reviews view only)."""
+    if my_vote and my_vote in VOTE_EMOJI:
+        return VOTE_EMOJI[my_vote]
+    return "!" if is_required else ""
+
+
+def format_reviews(reviews: list, exclude_vote: str = "") -> str:
+    """Format reviewer votes as grouped counts (e.g. ✓2 !3).
+
+    Required reviewer pending = !, optional pending = hidden.
+    exclude_vote: skip one instance of this vote type (Me column dedup).
+    """
+    if not reviews:
+        return ""
+
+    parts = []
+    vote_skipped = False
+    for r in reviews:
+        vote = r.get("vote", "NoVote") or "NoVote"
+        req = r.get("isRequired", False)
+
+        # Skip one entry matching user's vote (shown in Me column)
+        if exclude_vote and not vote_skipped and vote == exclude_vote:
+            vote_skipped = True
+            continue
+
+        if vote not in VOTE_EMOJI:
+            if req:
+                parts.append("!")
+            # Optional no-vote → hidden
+        else:
+            parts.append(VOTE_EMOJI[vote])
+
+    if not parts:
+        return ""
+
+    # Group by symbol (total count, not just consecutive)
+    from collections import Counter
+
+    counts = Counter(parts)
+    # Fixed order: approved, required-pending, changes-requested, rejected
+    order = ["✓", "!", "↻", "✗"]
+    grouped = []
+    for sym in order:
+        c = counts.get(sym, 0)
+        if c == 1:
+            grouped.append(sym)
+        elif c > 1:
+            grouped.append(f"{sym}{c}")
+
+    return " ".join(grouped)
+
+
+def format_checks(pr: dict) -> str:
+    rt = pr.get("requiredTotal")
+    if rt is not None:
+        rp = pr.get("requiredPass", 0)
+        ot = pr.get("optionalTotal", 0)
+        op = pr.get("optionalPass", 0)
+        if rp < rt:
+            return f"✗ {rp}/{rt}"
+        if ot > 0 and op < ot:
+            return f"~ {op}/{ot}"
+        return "✓"
+    p, t = pr.get("checksPass"), pr.get("checksTotal")
+    if t is None:
+        return "?"
+    icon = "✓" if p == t else "✗"
+    return f"{icon} {p}/{t}"
+
+
+def format_comments(pr: dict) -> str:
+    a, t = pr.get("commentsActive"), pr.get("commentsTotal")
+    if t is None:
+        return "?"
+    if a == 0:
+        return f"✓ {t}"
+    return f"💬 {a}/{t}"
+
+
+def shorten_repo(name: str) -> str:
+    for prefix in ("AzNet-ApplicationSecurity-", "AzNet-"):
+        if name.startswith(prefix):
+            return name[len(prefix) :]
+    return name
+
+
+def _derive_status(status: str, pr: dict | None = None) -> tuple[str, str]:
+    """Derive (symbol, label) for a PR status.
+
+    Priority for active PRs: WaitingForAuthor > Approved > Draft > AutoComplete > Active.
+    Merge conflicts: appended as ⚠ suffix via format_status().
+    """
+    if pr and status == "active":
+        reviews = pr.get("reviews", [])
+        # Any reviewer waiting for author?
+        if any(r.get("vote") == "WaitingForAuthor" for r in reviews):
+            return "↻", "Waiting for Author"
+        # All required reviewers approved? (ADO only — GitHub has no isRequired)
+        required = [r for r in reviews if r.get("isRequired")]
+        if required and all(
+            r.get("vote") in ("Approved", "ApprovedWithSuggestions") for r in required
+        ):
+            return "✓", "Approved"
+        # GitHub: all reviewers approved (no isRequired concept)
+        if (
+            not required
+            and reviews
+            and all(
+                r.get("vote") in ("Approved", "ApprovedWithSuggestions")
+                for r in reviews
+            )
+        ):
+            return "✓", "Approved"
+        if pr.get("isDraft"):
+            return "✎", "Draft"
+        if pr.get("autoCompleteSetBy"):
+            return "»", "Auto-complete"
+        return "○", "Active"
+    if status == "completed":
+        return "✓✓", "Completed"
+    if status == "abandoned":
+        return "∅", "Abandoned"
+    if status == "active":
+        return "○", "Active"
+    # Fallback for non-active with isDraft / autoComplete (shouldn't happen)
+    if pr and pr.get("isDraft"):
+        return "✎", "Draft"
+    if pr and pr.get("autoCompleteSetBy"):
+        return "»", "Auto-complete"
+    return "?", "Unknown"
+
+
+def _has_merge_conflicts(pr: dict | None) -> bool:
+    """Check if a PR has merge conflicts based on mergeStatus field."""
+    if not pr:
+        return False
+    ms = pr.get("mergeStatus", "")
+    # ADO: "conflicts"; GitHub: mapped from "dirty"/"behind"
+    return ms in ("conflicts", "dirty", "behind")
+
+
+def format_status(status: str, pr: dict | None = None) -> str:
+    """Format PR status as symbol indicator, with ⚠ suffix for merge conflicts."""
+    symbol, _ = _derive_status(status, pr)
+    if _has_merge_conflicts(pr):
+        return f"{symbol} ⚠"
+    return symbol
+
+
+def format_status_label(status: str, pr: dict | None = None) -> str:
+    """Format PR status as 'symbol Label' for detail panels."""
+    symbol, label = _derive_status(status, pr)
+    if _has_merge_conflicts(pr):
+        return f"{symbol} {label} · ⚠ Merge Conflicts"
+    return f"{symbol} {label}"
+
+
+def evaluate_pr_conditions(pr: dict, *, current_user: str = "") -> dict:
+    """Compute condition values from a PR for rule matching."""
+    status = pr.get("status", "")
+    _, label = _derive_status(status, pr)
+    reviews = pr.get("reviews", [])
+    required = [r for r in reviews if r.get("isRequired")]
+    comments_active = pr.get("commentsActive") or 0
+    comments_total = pr.get("commentsTotal") or 0
+
+    # Count threads where current user participated but last reply is from someone else
+    my_pending_threads = 0
+    if current_user:
+        for thread in pr.get("threads", []):
+            comments = thread.get("comments", [])
+            if not comments:
+                continue
+            user_participated = any(
+                c.get("author", "").lower() == current_user.lower()
+                for c in comments
+            )
+            if user_participated:
+                last_author = comments[-1].get("author", "")
+                if last_author.lower() != current_user.lower():
+                    my_pending_threads += 1
+
+    return {
+        "role": pr.get("role", "author"),
+        "status": label,
+        "isDraft": pr.get("isDraft", False),
+        "mergeStatus": pr.get("mergeStatus", ""),
+        "myVote": pr.get("myVote", "NoVote"),
+        "isRequiredReviewer": pr.get("isRequiredReviewer", False),
+        "hasActiveComments": comments_active > 0,
+        "allCommentsResolved": comments_active == 0 and comments_total > 0,
+        "allRequiredApproved": bool(required) and all(
+            r.get("vote") in ("Approved", "ApprovedWithSuggestions") for r in required
+        ),
+        "checksPass": (
+            pr.get("requiredPass") is not None
+            and pr.get("requiredPass") == pr.get("requiredTotal")
+        ),
+        "isPinned": bool(pr.get("pinned")),
+        "myCommentPending": my_pending_threads > 0,
+        "myPendingThreads": my_pending_threads,
+    }
+
+
+def pr_row_style(pr: dict, rules: list[dict] | None = None, current_user: str = "") -> tuple[Style | None, dict | None]:
+    """Return (row_style, matched_rule) based on configurable signal rules.
+
+    Each rule: 'conditions' dict (all must match), plus style keys:
+    'color' (bgcolor), 'bold', 'italic', 'strikethrough'.
+    Optional 'description' shown in detail panel.
+    First matching rule wins.
+    """
+    if rules is None:
+        from .config import DEFAULT_DISPLAY
+        rules = DEFAULT_DISPLAY["row_rules"]
+
+    pr_conds = evaluate_pr_conditions(pr, current_user=current_user)
+
+    for rule in rules:
+        conditions = rule.get("conditions", {})
+        if not conditions:
+            continue
+        if all(pr_conds.get(k) == v for k, v in conditions.items()):
+            color = rule.get("color", "")
+            if color:
+                style = Style(
+                    bgcolor=color,
+                    bold=True if rule.get("bold") else None,
+                    italic=True if rule.get("italic") else None,
+                    strike=True if rule.get("strikethrough") else None,
+                )
+                return style, rule
+    return None, None
+
+
+def format_source(source: str) -> str:
+    """Return the source identifier, capped at 10 chars."""
+    return truncate(source, 10)
+
+
+def source_label(source: str) -> str:
+    """Human-readable label: 'ado/msazure' → 'ADO msazure', 'github' → 'GitHub'."""
+    if source == "github":
+        return "GitHub"
+    if source.startswith("ado/"):
+        return f"ADO {source.removeprefix('ado/')}"
+    return source
+
+
+def format_pin(pr: dict) -> str:
+    """Return ★ for pinned PRs, empty string otherwise."""
+    return "★" if pr.get("pinned") else ""
+
+
+def get_cell_value(
+    col_id: str, pr: dict, *, is_reviews: bool = False, display: dict | None = None
+) -> str:
+    """Get formatted cell value for a column ID."""
+    if display is None:
+        from .config import DEFAULT_DISPLAY
+
+        display = DEFAULT_DISPLAY
+    widths = display.get("column_widths", {})
+    suffix = display.get("truncation_suffix", "..")
+
+    match col_id:
+        case "pin":
+            return format_pin(pr)
+        case "status":
+            return format_status(pr.get("status", ""), pr)
+        case "author":
+            return truncate(pr.get("author", ""), widths.get("author", 14), suffix)
+        case "repo":
+            return shorten_repo(pr.get("repoName", ""))
+        case "id":
+            return str(pr.get("id", ""))
+        case "title":
+            return truncate(pr.get("title", ""), widths.get("title", 50), suffix)
+        case "my_vote":
+            return format_my_vote(
+                pr.get("myVote", ""), pr.get("isRequiredReviewer", False)
+            )
+        case "votes":
+            if is_reviews:
+                return format_reviews(
+                    pr.get("reviews", []), exclude_vote=pr.get("myVote", "")
+                )
+            return format_reviews(pr.get("reviews", []))
+        case "checks":
+            return format_checks(pr)
+        case "comments":
+            return format_comments(pr)
+        case "updated":
+            return format_time_ago(pr.get("lastUpdated"))
+        case "fetched":
+            return format_time_ago(pr.get("lastLoaded"))
+        case "source":
+            return format_source(pr.get("source", ""))
+        case "action":
+            from .config import DEFAULT_DISPLAY
+
+            rules = (display or DEFAULT_DISPLAY).get("row_rules", [])
+            current_user = pr.get("currentUserName", "")
+            _style, matched_rule = pr_row_style(pr, rules=rules, current_user=current_user)
+            if matched_rule and matched_rule.get("action"):
+                return truncate(matched_rule["action"], widths.get("action", 20), suffix)
+            return ""
+        case "sig_role":
+            return pr.get("role", "author")
+        case "sig_isDraft":
+            return "✓" if pr.get("isDraft") else ""
+        case "sig_mergeStatus":
+            ms = pr.get("mergeStatus", "")
+            return "⚠" if ms == "conflicts" else ms if ms else ""
+        case "sig_myVote":
+            vote = pr.get("myVote", "NoVote")
+            return VOTE_EMOJI.get(vote, vote) if vote != "NoVote" else ""
+        case "sig_isRequired":
+            return "✓" if pr.get("isRequiredReviewer") else ""
+        case "sig_hasActiveComments":
+            return "✓" if (pr.get("commentsActive") or 0) > 0 else ""
+        case "sig_allCommentsResolved":
+            active = pr.get("commentsActive") or 0
+            total = pr.get("commentsTotal") or 0
+            return "✓" if active == 0 and total > 0 else ""
+        case "sig_allRequiredApproved":
+            reviews = pr.get("reviews", [])
+            required = [r for r in reviews if r.get("isRequired")]
+            if required and all(r.get("vote") in ("Approved", "ApprovedWithSuggestions") for r in required):
+                return "✓"
+            return ""
+        case "sig_checksPass":
+            rp = pr.get("requiredPass")
+            rt = pr.get("requiredTotal")
+            return "✓" if rp is not None and rp == rt else ""
+        case "sig_myCommentPending":
+            current_user = pr.get("currentUserName", "")
+            conds = evaluate_pr_conditions(pr, current_user=current_user)
+            return "✓" if conds.get("myCommentPending") else ""
+        case "sig_myPendingThreads":
+            current_user = pr.get("currentUserName", "")
+            conds = evaluate_pr_conditions(pr, current_user=current_user)
+            count = conds.get("myPendingThreads", 0)
+            return str(count) if count > 0 else ""
+        case _:
+            return ""
+
+
+def sort_prs(prs: list[dict]) -> list[dict]:
+    """Sort PRs by repo ascending, then lastUpdated descending."""
+    from datetime import datetime
+
+    def _sort_key(pr: dict):
+        repo = shorten_repo(pr.get("repoName", "")).lower()
+        updated = pr.get("lastUpdated") or ""
+        try:
+            dt = datetime.fromisoformat(updated)
+            ts = dt.timestamp()
+        except Exception:
+            ts = 0.0
+        return (repo, -ts)
+
+    return sorted(prs, key=_sort_key)
+
+
+def pr_matches_filter(pr: dict, query: str) -> bool:
+    query = query.lower()
+    searchable = " ".join(
+        [
+            pr.get("title", ""),
+            pr.get("author", ""),
+            pr.get("repoName", ""),
+            str(pr.get("id", "")),
+            pr.get("status", ""),
+            pr.get("source", ""),
+        ]
+    ).lower()
+    return all(term in searchable for term in query.split())
