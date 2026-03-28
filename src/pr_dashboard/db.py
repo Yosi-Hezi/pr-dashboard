@@ -18,7 +18,6 @@ log = get_logger()
 
 DATA_DIR = Path(user_data_dir("pr-dashboard", ensure_exists=True))
 DB_FILE = DATA_DIR / "dashboard.db"
-LEGACY_JSON = DATA_DIR / "prs.json"
 
 SCHEMA_VERSION = 1
 
@@ -437,87 +436,9 @@ class Database:
         row = self.conn.execute("SELECT COUNT(*) as cnt FROM prs").fetchone()
         return row["cnt"]
 
-    # ── Migration ─────────────────────────────────────────────────────────
-
-    @classmethod
-    def from_legacy_json(cls, json_path: Path | None = None, db_path: Path | None = None) -> Database:
-        """Create a Database by importing data from a legacy prs.json file."""
-        json_file = json_path or LEGACY_JSON
-        target_db = db_path or DB_FILE
-
-        db = cls(db_path=target_db)
-        log.info("Migrating from %s to %s", json_file, target_db)
-
-        try:
-            raw = json_file.read_text(encoding="utf-8")
-            data = json.loads(raw)
-        except (OSError, json.JSONDecodeError) as exc:
-            log.error("Failed to read legacy JSON: %s", exc)
-            return db
-
-        if data.get("version") != 3:
-            log.warning("Legacy JSON has unexpected version %s, skipping migration", data.get("version"))
-            return db
-
-        # Meta
-        db.set_meta("currentUser", data.get("currentUser", ""))
-        db.set_meta("schema_version", str(SCHEMA_VERSION))
-
-        # Sources
-        sources = data.get("sources", {})
-        for list_type in ("discovered", "include", "exclude"):
-            names = sources.get(list_type, [])
-            if names:
-                db.set_sources(list_type, names)
-
-        # Repos
-        repos = data.get("repos", {})
-        for list_type in ("discovered", "include", "exclude"):
-            repo_list = repos.get(list_type, [])
-            if repo_list:
-                db.set_repos(list_type, repo_list)
-
-        # PRs
-        prs = data.get("prs", [])
-        if prs:
-            db.upsert_prs_batch(prs)
-
-        # Verify migration by reading back PR count
-        actual = db.conn.execute("SELECT COUNT(*) FROM prs").fetchone()[0]
-        expected = len(prs)
-        if actual != expected:
-            log.error(
-                "Migration verification failed: expected %d PRs, got %d. "
-                "Keeping legacy JSON file.",
-                expected,
-                actual,
-            )
-            return db
-
-        log.info(
-            "Migration complete: %d sources, %d repos, %d PRs",
-            sum(len(sources.get(lt, [])) for lt in ("discovered", "include", "exclude")),
-            sum(len(repos.get(lt, [])) for lt in ("discovered", "include", "exclude")),
-            expected,
-        )
-
-        # Rename old file only after successful verification
-        backup = json_file.with_suffix(".json.bak")
-        try:
-            json_file.rename(backup)
-            log.info("Renamed %s → %s", json_file, backup)
-        except OSError as exc:
-            log.warning("Could not rename legacy JSON: %s", exc)
-
-        return db
+    # ── end of Database class ──────────────────────────────────────────
 
 
 def get_database(db_path: Path | None = None) -> Database:
-    """Get a Database instance, auto-migrating from legacy JSON if needed."""
-    target = db_path or DB_FILE
-    json_file = LEGACY_JSON if db_path is None else None
-
-    if not target.exists() and json_file and json_file.exists():
-        return Database.from_legacy_json(json_file, target)
-
-    return Database(db_path=target)
+    """Get a Database instance."""
+    return Database(db_path=db_path or DB_FILE)

@@ -130,7 +130,6 @@ Every PR is enriched with data from the source API:
 - Sources and repos use `{discovered, include, exclude}` sublists
 - Repos are qualified with source: `{"source": "ado/msazure", "repo": "MyRepo"}`
 - Composite key `(source, id)` prevents cross-source duplication
-- Auto-migrates from legacy `prs.json` (renamed to `.json.bak`)
 - Async locking for concurrent operations
 
 ### Error Handling
@@ -232,14 +231,6 @@ uv run pr-dashboard list --mine
 - Extension keys validated against built-in bindings (conflicts rejected)
 - Extensions shown in footer and help screen (`?`)
 
-### Bundled Extension: Open Worktree
-- `extensions/open-worktree.ps1` — opens VS Code for a PR's source branch
-- Scans `C:\repos` for git worktrees matching the PR's source branch
-- If worktree exists → opens VS Code there immediately
-- If not → finds the repo, fetches, creates a new worktree, opens VS Code
-- Handles existing local branches gracefully (no duplicate branch errors)
-- Clear status messages for each code path in the log
-
 ---
 
 ## Phase 5 Changelog
@@ -289,8 +280,6 @@ uv run pr-dashboard list --mine
 - Data storage moved from `prs.json` to `dashboard.db` (SQLite with WAL mode)
 - Hybrid schema: indexed key columns (`source`, `id`, `role`, `status`, `repo_name`, `is_draft`, `is_mine`, `pinned`) plus JSON blob for full PR data
 - Single-row operations (toggle pin, remove, clean) are now O(1) instead of full-file rewrite
-- Auto-migration: existing `prs.json` files are imported on first run and renamed to `.json.bak`
-- Migration includes verification step — original file only renamed after data is confirmed in SQLite
 
 ### Configurable Row Rules
 - New `row_rules` config for signal-based row styling

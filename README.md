@@ -142,8 +142,8 @@ pr-dashboard config
   "extensions": [
     {
       "key": "x",
-      "name": "Open Worktree",
-      "command": "pwsh -File path/to/open-worktree.ps1 {json_file}"
+      "name": "Run Script",
+      "command": "pwsh -File my/script/path/script.ps1 {json_file}"
     }
   ]
 }
@@ -151,9 +151,15 @@ pr-dashboard config
 
 ### Extensions
 
-Extensions are user-defined scripts triggered by hotkey. The selected PR's data is written to a temp JSON file, and `{json_file}` in the command is replaced with its path.
+Extensions let you run custom scripts triggered by a hotkey. When you press the extension key, the selected PR's full data is written to a temporary JSON file, and `{json_file}` in the command is replaced with its path.
 
-A bundled example (`extensions/open-worktree.ps1`) opens VS Code at the git worktree matching the PR's source branch.
+The JSON file contains all PR fields (title, status, source branch, repo, reviewers, comments, etc.), so your script can read it and take any action — open an IDE, create a worktree, post a notification, trigger a pipeline, etc.
+
+```bash
+# Example: your script receives the temp file path as $args[0]
+$pr = Get-Content $args[0] | ConvertFrom-Json
+Write-Host "PR: $($pr.title) in $($pr.repoName)"
+```
 
 ### Row Highlighting Rules
 

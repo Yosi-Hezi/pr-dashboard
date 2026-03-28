@@ -352,57 +352,6 @@ class TestRepoManagement:
         assert {p["id"] for p in prs} == {2, 3}
 
 
-# ── Database: migration from legacy JSON ─────────────────────────
-
-
-class TestLegacyMigration:
-    def test_migrate_from_json(self, tmp_path):
-        import json
-
-        json_file = tmp_path / "prs.json"
-        json_data = {
-            "version": 3,
-            "currentUser": "test@example.com",
-            "sources": {
-                "discovered": ["ado/msazure"],
-                "include": ["ado/custom"],
-                "exclude": ["ado/contoso"],
-            },
-            "repos": {
-                "discovered": [{"source": "ado/msazure", "repo": "Repo1"}],
-                "include": [],
-                "exclude": [{"source": "ado/msazure", "repo": "Noisy"}],
-            },
-            "prs": [
-                {"source": "ado/msazure", "id": 42, "title": "Test PR", "status": "active"},
-            ],
-        }
-        json_file.write_text(json.dumps(json_data), encoding="utf-8")
-
-        db = Database.from_legacy_json(json_file, tmp_path / "test.db")
-
-        assert db.get_meta("currentUser") == "test@example.com"
-        assert db.get_sources("discovered") == ["ado/msazure"]
-        assert db.get_sources("include") == ["ado/custom"]
-        assert db.get_sources("exclude") == ["ado/contoso"]
-        assert len(db.get_repos("discovered")) == 1
-        assert len(db.get_repos("exclude")) == 1
-        prs = db.load_prs()
-        assert len(prs) == 1
-        assert prs[0]["title"] == "Test PR"
-        # JSON file should be renamed
-        assert not json_file.exists()
-        assert (tmp_path / "prs.json.bak").exists()
-
-    def test_skip_wrong_version(self, tmp_path):
-        import json
-
-        json_file = tmp_path / "prs.json"
-        json_file.write_text(json.dumps({"version": 2, "prs": [{"id": 1}]}))
-        db = Database.from_legacy_json(json_file, tmp_path / "test.db")
-        assert db.load_prs() == []
-
-
 # ── Database: clean, remove ──────────────────────────────────────
 
 

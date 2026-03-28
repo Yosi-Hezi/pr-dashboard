@@ -1,8 +1,4 @@
-"""PR data store — manages persistent PR data backed by SQLite.
-
-Migrated from JSON to SQLite for faster targeted reads/writes.
-Auto-migrates from legacy prs.json on first use.
-"""
+"""PR data store — manages persistent PR data backed by SQLite."""
 
 from __future__ import annotations
 
