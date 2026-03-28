@@ -207,11 +207,11 @@ async def _auto_sync_if_stale(store: PrDataStore) -> None:
 
     # Full sync if stale — checked FIRST to prevent refresh+sync double-run.
     # If sync triggers, it also updates last_refresh_time and returns early.
-    if cfg["auto_sync_enabled"] and last_sync is not None:
-        age_min = (now - last_sync).total_seconds() / 60
-        if age_min >= cfg["auto_sync_interval"]:
+    if cfg["auto_sync_enabled"]:
+        if last_sync is None or (now - last_sync).total_seconds() / 60 >= cfg["auto_sync_interval"]:
+            age = f"last sync {int((now - last_sync).total_seconds() / 60)}m ago" if last_sync else "never synced"
             console.print(
-                f"[dim]Auto-syncing (last sync {int(age_min)}m ago)...[/]",
+                f"[dim]Auto-syncing ({age})...[/]",
                 highlight=False,
             )
             await store.sync()
@@ -221,11 +221,11 @@ async def _auto_sync_if_stale(store: PrDataStore) -> None:
             return
 
     # Refresh if stale (use latest of sync/refresh timestamps)
-    if cfg["auto_refresh_enabled"] and latest is not None:
-        age_min = (now - latest).total_seconds() / 60
-        if age_min >= cfg["auto_refresh_interval"]:
+    if cfg["auto_refresh_enabled"]:
+        if latest is None or (now - latest).total_seconds() / 60 >= cfg["auto_refresh_interval"]:
+            age = f"last update {int((now - latest).total_seconds() / 60)}m ago" if latest else "never refreshed"
             console.print(
-                f"[dim]Auto-refreshing (last update {int(age_min)}m ago)...[/]",
+                f"[dim]Auto-refreshing ({age})...[/]",
                 highlight=False,
             )
             await store.refresh_all()

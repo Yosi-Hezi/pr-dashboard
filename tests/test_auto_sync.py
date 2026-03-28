@@ -89,11 +89,11 @@ class TestAutoSyncIfStale:
         store.sync.assert_not_awaited()
         store.refresh_all.assert_not_awaited()
 
-    def test_no_timestamps_nothing_runs(self):
-        """No timestamps recorded → nothing runs (first run)."""
+    def test_no_timestamps_triggers_sync(self):
+        """No timestamps recorded → auto-sync triggers (treats as stale)."""
         store = FakeStore({})
         asyncio.run(_auto_sync_if_stale(store))
-        store.sync.assert_not_awaited()
+        store.sync.assert_awaited_once()
         store.refresh_all.assert_not_awaited()
 
     def test_sync_disabled_only_refresh(self):
@@ -103,6 +103,14 @@ class TestAutoSyncIfStale:
             "last_sync_time": _iso(1500),
             "last_refresh_time": _iso(45),
         })
+        asyncio.run(_auto_sync_if_stale(store))
+        store.sync.assert_not_awaited()
+        store.refresh_all.assert_awaited_once()
+
+    def test_sync_disabled_no_refresh_timestamp_triggers_refresh(self):
+        """Auto-sync disabled, no refresh timestamp → refresh triggers."""
+        self._sync_cfg["auto_sync_enabled"] = False
+        store = FakeStore({})
         asyncio.run(_auto_sync_if_stale(store))
         store.sync.assert_not_awaited()
         store.refresh_all.assert_awaited_once()
