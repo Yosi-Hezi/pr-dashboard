@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import sys
+from datetime import UTC, datetime
 
 from .ado_client import AdoApiError, AdoAuthError
 from .cli_sources import (
@@ -16,7 +17,7 @@ from .cli_sources import (
     cmd_sources_exclude,
     cmd_sources_include,
 )
-from .config import COLUMN_DEFS, get_display_config
+from .config import COLUMN_DEFS, get_display_config, get_sync_config
 from .data import PrDataStore
 from .formatting import (
     VOTE_EMOJI,
@@ -182,12 +183,64 @@ def _pr_url_table(prs: list[dict], title: str | None = None) -> Table:
     return table
 
 
+# ── Auto-sync helpers ─────────────────────────────────────────────────────
+
+
+def _parse_iso(ts: str) -> datetime | None:
+    """Parse ISO timestamp, return None on failure."""
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts)
+    except ValueError:
+        return None
+
+
+async def _auto_sync_if_stale(store: PrDataStore) -> None:
+    """Run sync or refresh before list if data is stale per config intervals."""
+    cfg = get_sync_config()
+    now = datetime.now(UTC)
+
+    last_sync = _parse_iso(store.db.get_meta("last_sync_time"))
+    last_refresh = _parse_iso(store.db.get_meta("last_refresh_time"))
+    latest = max(filter(None, [last_sync, last_refresh]), default=None)
+
+    # Full sync if stale
+    if cfg["auto_sync_enabled"] and last_sync is not None:
+        age_min = (now - last_sync).total_seconds() / 60
+        if age_min >= cfg["auto_sync_interval"]:
+            console.print(
+                f"[dim]Auto-syncing (last sync {int(age_min)}m ago)...[/]",
+                highlight=False,
+            )
+            await store.sync()
+            ts = datetime.now(UTC).isoformat()
+            store.db.set_meta("last_sync_time", ts)
+            store.db.set_meta("last_refresh_time", ts)
+            return
+
+    # Refresh if stale (use latest of sync/refresh timestamps)
+    if cfg["auto_refresh_enabled"] and latest is not None:
+        age_min = (now - latest).total_seconds() / 60
+        if age_min >= cfg["auto_refresh_interval"]:
+            console.print(
+                f"[dim]Auto-refreshing (last update {int(age_min)}m ago)...[/]",
+                highlight=False,
+            )
+            await store.refresh_all()
+            store.db.set_meta("last_refresh_time", datetime.now(UTC).isoformat())
+            return
+
+
 # ── Commands ──────────────────────────────────────────────────────────────
 
 
 async def cmd_sync(store: PrDataStore, as_json: bool) -> None:
     console.print("[dim]Discovering sources and syncing PRs...[/]", highlight=False)
     prs = await store.sync()
+    now = datetime.now(UTC).isoformat()
+    store.db.set_meta("last_sync_time", now)
+    store.db.set_meta("last_refresh_time", now)
     if as_json:
         print(json.dumps(prs, indent=2, ensure_ascii=False))
     else:
@@ -284,6 +337,7 @@ async def cmd_refresh(store: PrDataStore, pr_id: int, as_json: bool) -> None:
 async def cmd_refresh_all(store: PrDataStore, as_json: bool) -> None:
     console.print("[dim]Refreshing all tracked PRs...[/]", highlight=False)
     prs = await store.refresh_all()
+    store.db.set_meta("last_refresh_time", datetime.now(UTC).isoformat())
     if as_json:
         print(json.dumps(prs, indent=2, ensure_ascii=False))
     else:
@@ -404,6 +458,9 @@ async def run(args: argparse.Namespace) -> None:
                 if getattr(args, "sync", False):
                     console.print("[dim]Refreshing tracked PRs...[/]", highlight=False)
                     await store.refresh_all()
+                    store.db.set_meta("last_refresh_time", datetime.now(UTC).isoformat())
+                else:
+                    await _auto_sync_if_stale(store)
                 role = ""
                 if getattr(args, "mine", False):
                     role = "author"

@@ -7,11 +7,13 @@ import pytest
 
 from pr_dashboard.config import (
     DEFAULT_KEYBINDINGS,
+    DEFAULT_SYNC,
     _validate_extensions,
     _validate_key,
     _validate_keybindings,
     get_display_config,
     get_keybindings,
+    get_sync_config,
     DEFAULT_DISPLAY,
 )
 
@@ -165,6 +167,49 @@ class TestGetDisplayConfig:
         # Other defaults still present
         assert "approved" in ids
         assert "abandoned" in ids
+
+
+# ── get_sync_config ─────────────────────────────────────────────
+
+
+class TestGetSyncConfig:
+    def test_defaults_no_config(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("pr_dashboard.config.CONFIG_FILE", tmp_path / "nope.json")
+        cfg = get_sync_config()
+        assert cfg == DEFAULT_SYNC
+
+    def test_override_interval(self, tmp_path, monkeypatch):
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps({"sync": {"auto_refresh_interval": 10}}))
+        monkeypatch.setattr("pr_dashboard.config.CONFIG_FILE", config_file)
+        cfg = get_sync_config()
+        assert cfg["auto_refresh_interval"] == 10
+        assert cfg["auto_sync_interval"] == 1440  # default preserved
+
+    def test_disable_auto_refresh(self, tmp_path, monkeypatch):
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps({"sync": {"auto_refresh_enabled": False}}))
+        monkeypatch.setattr("pr_dashboard.config.CONFIG_FILE", config_file)
+        cfg = get_sync_config()
+        assert cfg["auto_refresh_enabled"] is False
+        assert cfg["auto_sync_enabled"] is True  # default
+
+    def test_invalid_interval_ignored(self, tmp_path, monkeypatch, caplog):
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps({"sync": {"auto_refresh_interval": -5}}))
+        monkeypatch.setattr("pr_dashboard.config.CONFIG_FILE", config_file)
+        with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
+            cfg = get_sync_config()
+        assert cfg["auto_refresh_interval"] == 30  # default
+        assert any("positive integer" in r.message for r in caplog.records)
+
+    def test_zero_interval_ignored(self, tmp_path, monkeypatch, caplog):
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps({"sync": {"auto_sync_interval": 0}}))
+        monkeypatch.setattr("pr_dashboard.config.CONFIG_FILE", config_file)
+        with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
+            cfg = get_sync_config()
+        assert cfg["auto_sync_interval"] == 1440  # default
 
     def test_overlay_override_color(self, tmp_path, monkeypatch):
         """User overrides color of a default rule."""

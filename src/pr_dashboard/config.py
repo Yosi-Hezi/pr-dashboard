@@ -148,6 +148,7 @@ def load_config() -> dict:
         "theme": data.get("theme", "textual-dark"),
         "extensions": data.get("extensions", []),
         "display": data.get("display", {}),
+        "sync": data.get("sync", {}),
     }
 
 
@@ -361,6 +362,33 @@ DEFAULT_DISPLAY: dict = {
     "footer_actions": list(DEFAULT_FOOTER_ACTIONS),
 }
 
+DEFAULT_SYNC = {
+    "auto_refresh_enabled": True,
+    "auto_refresh_interval": 30,
+    "auto_sync_enabled": True,
+    "auto_sync_interval": 1440,
+}
+
+
+def get_sync_config() -> dict:
+    """Return effective sync config (defaults merged with user overrides)."""
+    config = load_config()
+    user_sync = config.get("sync", {})
+    if not isinstance(user_sync, dict):
+        log.warning("config: sync section is not an object, using defaults")
+        return dict(DEFAULT_SYNC)
+
+    result = dict(DEFAULT_SYNC)
+    for key in ("auto_refresh_enabled", "auto_sync_enabled"):
+        if key in user_sync and isinstance(user_sync[key], bool):
+            result[key] = user_sync[key]
+    for key in ("auto_refresh_interval", "auto_sync_interval"):
+        if key in user_sync and isinstance(user_sync[key], int) and user_sync[key] > 0:
+            result[key] = user_sync[key]
+        elif key in user_sync:
+            log.warning("config: %s must be a positive integer, using default", key)
+    return result
+
 
 def get_display_config() -> dict:
     """Return effective display config (defaults merged with user overrides)."""
@@ -475,6 +503,7 @@ def get_full_defaults() -> dict:
             "row_rules": list(DEFAULT_DISPLAY["row_rules"]),
             "footer_actions": list(DEFAULT_FOOTER_ACTIONS),
         },
+        "sync": dict(DEFAULT_SYNC),
         "extensions": [],
         "theme": "textual-dark",
     }
