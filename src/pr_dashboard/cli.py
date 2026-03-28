@@ -468,8 +468,12 @@ def main() -> None:
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     sub = parser.add_subparsers(dest="command")
 
-    sync_p = sub.add_parser("sync", help="Fetch PRs from all registered sources")
-    sync_p.add_argument("pr_id", nargs="?", type=int, help="Refresh a specific tracked PR by ID")
+    sync_p = sub.add_parser(
+        "sync",
+        help="Sync PRs (discover+fetch, or refresh tracked)",
+        description="Discover sources and fetch PRs. Use --refresh to re-fetch tracked PRs without discovery, or pass a PR ID to refresh a single PR.",
+    )
+    sync_p.add_argument("pr_id", nargs="?", type=int, metavar="ID", help="Refresh a specific tracked PR by ID")
     sync_p.add_argument(
         "--refresh",
         action="store_true",
