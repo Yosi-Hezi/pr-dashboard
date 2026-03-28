@@ -20,7 +20,7 @@ It tracks your **authored PRs** and **code reviews**, showing live status for re
 | Azure DevOps (multiple orgs) | `az login` | Auto-discovers all orgs via VSSPS API |
 | GitHub | `gh auth login` | Auto-detected on first run |
 
-Sources and repos are auto-discovered on every sync. Use `sources` / `repos` CLI commands or TUI modals (`S` / `m`) to manage include/exclude lists.
+Sources and repos are auto-discovered on every sync. Use `sources` / `repos` CLI commands or TUI modals (`M` / `m`) to manage include/exclude lists.
 
 ```bash
 pr-dashboard sources                # list sources with status
@@ -45,20 +45,19 @@ PRs are tagged with a **role** — `author` or `reviewer` — so you can see wha
 |-----|--------|
 | `?` | Help screen |
 | `Tab` | Toggle view: My PRs ↔ Reviews |
-| `r` | Refresh selected PR |
-| `Ctrl+R` | Refresh all PRs |
-| `Ctrl+S` | Full sync (discover sources + fetch PRs) |
+| `s` | Refresh all PRs |
+| `S` | Full sync (discover sources + fetch PRs) |
 | `d` | Remove selected PR |
-| `Shift+D` | Remove all done/abandoned PRs |
-| `o` | Open PR in browser |
-| `c` | Copy PR URL to clipboard |
+| `D` | Remove all done/abandoned PRs |
+| `O` | Open PR in browser |
+| `o` | Copy PR URL to clipboard |
 | `/` | Filter by title, author, repo, ID |
-| `f` | Pin/unpin selected PR |
-| `Ctrl+F` | Toggle pinned-only filter |
+| `Space` | Pin/unpin selected PR |
+| `f` | Toggle pinned-only filter |
 | `v` | Quick peek (description + comments) |
 | `a` | Add PR by URL |
 | `m` | Manage repos (include/exclude) |
-| `S` | Manage sources (include/exclude) |
+| `M` | Manage sources (include/exclude) |
 | `i` | Connected sources & accounts |
 | `l` | Activity log |
 | `Escape` | Clear filter / close modal |
@@ -253,7 +252,7 @@ uv run pr-dashboard list --mine
 ### TUI Modals
 - **Add PR** (`a`): add any PR by URL — shows which list it was added to (My PRs / Reviews)
 - **Manage Repos** (`m`): browse all discovered + included repos, toggle with `Space`, add new repos by typing a URL
-- **Manage Sources** (`S`): browse all discovered + included sources, toggle with `Space`
+- **Manage Sources** (`M`): browse all discovered + included sources, toggle with `Space`
 - All modals are scrollable with consistent toggle semantics
 
 ### CLI Source/Repo Commands

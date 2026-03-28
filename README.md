@@ -51,19 +51,18 @@ pr-dashboard list --reviews  # list reviews assigned to you
 |-----|--------|
 | `?` | Help screen |
 | `Tab` | Toggle: My PRs ↔ Reviews |
-| `r` | Refresh selected PR |
-| `Ctrl+R` | Refresh all PRs |
-| `Ctrl+S` | Full sync (discover sources + fetch PRs) |
-| `d` / `Shift+D` | Remove selected / all done PRs |
-| `o` | Open PR in browser |
-| `c` | Copy PR URL to clipboard |
+| `s` | Refresh all PRs |
+| `S` | Full sync (discover sources + fetch PRs) |
+| `d` / `D` | Remove selected / all done PRs |
+| `O` | Open PR in browser |
+| `o` | Copy PR URL to clipboard |
 | `/` | Filter by title, author, repo, ID |
-| `f` | Pin/unpin selected PR |
-| `Ctrl+F` | Toggle pinned-only filter |
+| `Space` | Pin/unpin selected PR |
+| `f` | Toggle pinned-only filter |
 | `v` | Peek at description & comments |
 | `a` | Add PR by URL |
 | `m` | Manage repos (include/exclude) |
-| `S` | Manage sources (include/exclude) |
+| `M` | Manage sources (include/exclude) |
 | `i` | Connected sources & accounts |
 | `l` | Activity log |
 | `Esc` | Clear filter / close modal |
@@ -85,7 +84,7 @@ Sources and repos each have three lists:
 
 ### TUI Management
 
-- Press `S` to manage sources — toggle with `Space` (✓ active / ✗ excluded)
+- Press `M` to manage sources — toggle with `Space` (✓ active / ✗ excluded)
 - Press `m` to manage repos — toggle with `Space`, or type a repo URL to add
 
 Toggle behavior:
