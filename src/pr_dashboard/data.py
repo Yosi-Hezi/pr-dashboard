@@ -662,18 +662,17 @@ class PrDataStore:
             repos["discovered"] = unique_repos
 
             # ── Phase 5: Clean up stale excludes ──────────────────────
-            all_known_repos = seen_repos | {
-                (r.get("source", ""), r.get("repo", ""))
-                for r in repos.get("include", [])
-            }
-            repos["exclude"] = [
-                r
-                for r in repos.get("exclude", [])
-                if (r.get("source", ""), r.get("repo", "")) in all_known_repos
-            ]
+            # Only remove excluded repos/sources whose SOURCE no longer
+            # exists.  Individual repos may vanish between syncs (no PRs
+            # in them right now) but the user's exclude intent must stick.
             all_known_srcs = set(sources["discovered"]) | set(
                 sources.get("include", [])
             )
+            repos["exclude"] = [
+                r
+                for r in repos.get("exclude", [])
+                if r.get("source", "") in all_known_srcs
+            ]
             sources["exclude"] = [
                 s for s in sources.get("exclude", []) if s in all_known_srcs
             ]
