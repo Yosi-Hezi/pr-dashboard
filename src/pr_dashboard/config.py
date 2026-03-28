@@ -37,6 +37,7 @@ DEFAULT_KEYBINDINGS: dict[str, str] = {
     "main.add_pr": "a",
     "main.manage_repos": "m",
     "main.manage_sources": "M",
+    "main.row_rules": "R",
     "main.quit": "ctrl+c",
 }
 
@@ -247,6 +248,7 @@ ACTION_DEFS: dict[str, tuple[str, str, bool]] = {
     "main.add_pr": ("Add PR", "add_pr", False),
     "main.manage_sources": ("Sources", "manage_sources", False),
     "main.manage_repos": ("Repos", "manage_repos", False),
+    "main.row_rules": ("Rules", "show_row_rules", False),
     "main.quit": ("Exit", "quit", False),
 }
 

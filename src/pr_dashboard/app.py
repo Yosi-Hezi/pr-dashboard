@@ -40,6 +40,7 @@ from .screens import (
     ManageReposScreen,
     ManageSourcesScreen,
     PeekScreen,
+    RowRulesScreen,
 )
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -705,7 +706,10 @@ class PRDashboard(App):
         self.push_screen(LogScreen())
 
     def action_toggle_help(self) -> None:
-        self.push_screen(HelpScreen(self._EFFECTIVE_KB, self._extensions, row_rules=self._display_cfg.get("row_rules", [])))
+        self.push_screen(HelpScreen(self._EFFECTIVE_KB, self._extensions))
+
+    def action_show_row_rules(self) -> None:
+        self.push_screen(RowRulesScreen(row_rules=self._display_cfg.get("row_rules", [])))
 
     def action_show_info(self) -> None:
         accounts = {

@@ -53,6 +53,7 @@ _ACTION_DESCRIPTIONS: dict[str, str] = {
     "main.add_pr": "Add PR by URL",
     "main.manage_sources": "Manage sources (include/exclude)",
     "main.manage_repos": "Manage repos (include/exclude)",
+    "main.row_rules": "View row highlighting rules",
     "main.quit": "Exit",
 }
 
@@ -93,12 +94,10 @@ class HelpScreen(ModalScreen):
         self,
         keybindings: dict[str, str] | None = None,
         extensions: list[dict] | None = None,
-        row_rules: list[dict] | None = None,
     ) -> None:
         super().__init__()
         self._keybindings = keybindings or DEFAULT_KEYBINDINGS
         self._extensions = extensions or []
-        self._row_rules = row_rules or []
 
     def compose(self) -> ComposeResult:
         # Build keybinding lines from effective config
@@ -132,13 +131,65 @@ class HelpScreen(ModalScreen):
             "[dim]Pin:        ★ Pinned[/]"
         )
 
-        # Row rules legend
-        rule_legend = ""
-        if self._row_rules:
-            rule_lines = ["\n[b]  ─── Row Highlighting Rules ───[/]"]
-            rule_lines.append("[dim]First matching rule wins. Configure in config.json → display.row_rules[/]")
+        with Vertical(id="help-dialog"):
+            yield Label("PR Dashboard — Help", id="help-title")
+            with VerticalScroll(id="help-scroll"):
+                yield Static(
+                    f"{kb_text}"
+                    f"{legend}"
+                    f"\n\n[dim]Logs: {LOG_DIR}[/]"
+                )
+
+
+class RowRulesScreen(ModalScreen):
+    """Show row highlighting rules with conditions, styles, and descriptions."""
+
+    BINDINGS = [
+        Binding("R", "dismiss", "Close", priority=True),
+        Binding("escape", "dismiss", "Close"),
+        Binding("tab", "noop", "", show=False, priority=True),
+    ]
+
+    def action_noop(self) -> None:
+        """Consume keys that should not leak to the main app."""
+
+    DEFAULT_CSS = """
+    RowRulesScreen {
+        align: center middle;
+    }
+    #rules-dialog {
+        width: 96;
+        height: auto;
+        max-height: 80%;
+        border: thick $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+    #rules-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    #rules-scroll {
+        height: auto;
+        max-height: 100%;
+    }
+    """
+
+    def __init__(self, row_rules: list[dict] | None = None) -> None:
+        super().__init__()
+        self._row_rules = row_rules or []
+
+    def compose(self) -> ComposeResult:
+        lines: list[str] = []
+        if not self._row_rules:
+            lines.append("[dim]No row rules configured.[/]")
+        else:
+            lines.append("[dim]First matching rule wins. Configure in config.json → display.row_rules[/]")
+            lines.append("")
             for i, rule in enumerate(self._row_rules, 1):
                 conds = rule.get("conditions", {})
+                cond_str = ", ".join(f"{k}={v}" for k, v in conds.items())
+
                 style_parts = []
                 if rule.get("color"):
                     style_parts.append(f"bg:{rule['color']}")
@@ -147,21 +198,30 @@ class HelpScreen(ModalScreen):
                 if rule.get("italic"):
                     style_parts.append("italic")
                 if rule.get("strikethrough"):
-                    style_parts.append("strikethrough")
-                cond_str = ", ".join(f"{k}={v}" for k, v in conds.items())
+                    style_parts.append("strike")
                 style_str = " + ".join(style_parts) if style_parts else "default"
-                rule_lines.append(f"  [dim]{i:>2}.[/] {cond_str:<58} → {style_str}")
-            rule_legend = "\n".join(rule_lines)
 
-        with Vertical(id="help-dialog"):
-            yield Label("PR Dashboard — Help", id="help-title")
-            with VerticalScroll(id="help-scroll"):
-                yield Static(
-                    f"{kb_text}"
-                    f"{legend}"
-                    f"{rule_legend}"
-                    f"\n\n[dim]Logs: {LOG_DIR}[/]"
-                )
+                # Color swatch using the rule's bgcolor
+                color = rule.get("color", "")
+                swatch = f"[on {color}]    [/] " if color else "     "
+
+                lines.append(f"{swatch}[b]{i:>2}.[/] {cond_str:<50} → {style_str}")
+
+                desc = rule.get("description", "")
+                if desc:
+                    lines.append(f"      [bold yellow]→ {desc}[/]")
+
+            lines.append("")
+            lines.append(
+                "[dim]Available conditions: role, status, isDraft, mergeStatus, myVote,\n"
+                "isRequiredReviewer, hasActiveComments, allCommentsResolved,\n"
+                "allRequiredApproved, checksPass, isPinned[/]"
+            )
+
+        with Vertical(id="rules-dialog"):
+            yield Label("Row Highlighting Rules", id="rules-title")
+            with VerticalScroll(id="rules-scroll"):
+                yield Static("\n".join(lines))
 
 
 class InfoScreen(ModalScreen):

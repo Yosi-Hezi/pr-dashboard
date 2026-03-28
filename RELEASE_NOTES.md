@@ -56,8 +56,9 @@ PRs are tagged with a **role** — `author` or `reviewer` — so you can see wha
 | `f` | Toggle pinned-only filter |
 | `v` | Quick peek (description + comments) |
 | `a` | Add PR by URL |
-| `m` | Manage repos (include/exclude) |
+| `m` | Manage repos (include/exclude reviews) |
 | `M` | Manage sources (include/exclude) |
+| `R` | Row highlighting rules |
 | `i` | Connected sources & accounts |
 | `l` | Activity log |
 | `Escape` | Clear filter / close modal |
@@ -250,6 +251,7 @@ uv run pr-dashboard list --mine
 - **Toggle semantics**: discovered items get excluded (✗ marker), include-only items get deleted entirely on toggle
 - **Stale cleanup**: sync removes excludes for items no longer discoverable or included
 - **Included repos from excluded sources**: you can exclude a source but still track specific repos within it
+- **Exclusion scope**: repo/source exclusion only affects **review PRs** — your authored PRs are always kept regardless of exclusion settings
 
 ### TUI Modals
 - **Add PR** (`a`): add any PR by URL — shows which list it was added to (My PRs / Reviews)
