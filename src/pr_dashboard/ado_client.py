@@ -39,11 +39,17 @@ class AdoApiError(Exception):
 class AdoClient:
     """Async Azure DevOps REST client."""
 
-    def __init__(self, org: str = DEFAULT_ORG, project: str = DEFAULT_PROJECT) -> None:
+    def __init__(
+        self,
+        org: str = DEFAULT_ORG,
+        project: str = DEFAULT_PROJECT,
+        token: str | None = None,
+    ) -> None:
         self.org = org
         self.project = project
         self.base_url = f"https://dev.azure.com/{org}"
         self._credential = AzureCliCredential()
+        self._pre_token = token
         self._http: httpx.AsyncClient | None = None
         self._client_lock = asyncio.Lock()
         self._user_id: str | None = None
@@ -58,9 +64,13 @@ class AdoClient:
     async def _get_client(self) -> httpx.AsyncClient:
         async with self._client_lock:
             if self._http is None or self._http.is_closed:
-                token = await asyncio.to_thread(self._credential.get_token, ADO_SCOPE)
+                if self._pre_token:
+                    bearer = self._pre_token
+                else:
+                    tok = await asyncio.to_thread(self._credential.get_token, ADO_SCOPE)
+                    bearer = tok.token
                 self._http = httpx.AsyncClient(
-                    headers={"Authorization": f"Bearer {token.token}"},
+                    headers={"Authorization": f"Bearer {bearer}"},
                     timeout=30.0,
                 )
                 log.debug("HTTP client created with Bearer token")
@@ -224,7 +234,7 @@ class AdoClient:
         seen: dict[tuple[str, bool], dict] = {}
         for e in evaluated:
             cfg = e.get("configuration", {})
-            type_name = cfg.get("type", {}).get("displayName", "Unknown check")
+            type_name = (cfg.get("type") or {}).get("displayName", "Unknown check")
 
             # Skip process policies (shown separately by ADO, not as checks)
             if type_name in _process_policies:
@@ -293,10 +303,8 @@ class AdoClient:
             if t.get("isDeleted"):
                 continue
             thread_type = (
-                t.get("properties", {})
-                .get("CodeReviewThreadType", {})
-                .get("$value", "")
-            )
+                (t.get("properties") or {}).get("CodeReviewThreadType") or {}
+            ).get("$value", "")
             if not thread_type:
                 user_threads.append(t)
 
@@ -391,10 +399,10 @@ class AdoClient:
         _, user_email = await self.get_current_user()
         pr_id = ado_pr["pullRequestId"]
         repo_id = ado_pr["repository"]["id"]
-        project_name = (
-            ado_pr.get("repository", {}).get("project", {}).get("name", self.project)
+        project_name = (ado_pr.get("repository", {}).get("project") or {}).get(
+            "name", self.project
         )
-        project_id = ado_pr.get("repository", {}).get("project", {}).get("id", "")
+        project_id = (ado_pr.get("repository", {}).get("project") or {}).get("id", "")
         repo_name = ado_pr["repository"]["name"]
         author_email = ado_pr.get("createdBy", {}).get("uniqueName", "")
 

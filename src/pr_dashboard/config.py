@@ -15,21 +15,28 @@ log = get_logger()
 CONFIG_DIR = Path(user_data_dir("pr-dashboard", ensure_exists=True))
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
+# Reserved keys — do NOT use as hotkeys:
+#   ctrl+c (SIGINT), ctrl+m (Enter), ctrl+i (Tab), ctrl+[ (Escape),
+#   ctrl+h (Backspace), ctrl+j (LF), ctrl+z (suspend/EOF),
+#   ctrl+q (Textual quit), tab/shift+tab (focus), escape (modal dismiss)
 DEFAULT_KEYBINDINGS: dict[str, str] = {
     "main.help": "question_mark",
     "main.toggle_view": "tab",
-    "main.refresh": "r",
-    "main.sync": "ctrl+s",
+    "main.refresh": "s",
+    "main.sync": "S",
     "main.remove": "d",
-    "main.remove_done": "ctrl+d",
-    "main.open": "o",
-    "main.copy_url": "c",
+    "main.remove_done": "D",
+    "main.copy_url": "o",
+    "main.open": "O",
     "main.filter": "slash",
     "main.info": "i",
     "main.log": "l",
     "main.peek": "v",
-    "main.pin": "f",
-    "main.filter_pinned": "ctrl+f",
+    "main.pin": "space",
+    "main.filter_pinned": "f",
+    "main.add_pr": "a",
+    "main.manage_repos": "m",
+    "main.manage_sources": "M",
     "main.quit": "ctrl+c",
 }
 
@@ -57,7 +64,7 @@ _SPECIAL_KEYS = frozenset(
 )
 
 _MODIFIER_RE = re.compile(r"^(ctrl|alt|shift)\+(.+)$")
-_SINGLE_CHAR_RE = re.compile(r"^[a-z0-9]$")
+_SINGLE_CHAR_RE = re.compile(r"^[a-zA-Z0-9]$")
 
 
 def _validate_key(key: str) -> bool:
@@ -237,6 +244,9 @@ ACTION_DEFS: dict[str, tuple[str, str, bool]] = {
     "main.peek": ("Peek", "peek_selected", False),
     "main.pin": ("Pin", "toggle_pin", False),
     "main.filter_pinned": ("★ Filter", "toggle_filter_pinned", False),
+    "main.add_pr": ("Add PR", "add_pr", False),
+    "main.manage_sources": ("Sources", "manage_sources", False),
+    "main.manage_repos": ("Repos", "manage_repos", False),
     "main.quit": ("Exit", "quit", False),
 }
 

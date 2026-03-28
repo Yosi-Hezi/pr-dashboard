@@ -17,6 +17,16 @@ uv tool install git+https://github.com/Yosi-Hezi/pr-dashboard
 pipx install git+https://github.com/Yosi-Hezi/pr-dashboard
 ```
 
+## Update
+
+```bash
+# With uv
+uv tool upgrade pr-dashboard
+
+# With pipx
+pipx upgrade pr-dashboard
+```
+
 ## Prerequisites
 
 - **Python** ≥ 3.12
@@ -30,9 +40,9 @@ pipx install git+https://github.com/Yosi-Hezi/pr-dashboard
 pr-dashboard
 
 # Or use CLI commands
-pr-dashboard register all    # auto-discover sources
-pr-dashboard sync            # fetch PRs
+pr-dashboard sync            # auto-discover sources & fetch PRs
 pr-dashboard list --mine     # list your PRs
+pr-dashboard list --reviews  # list reviews assigned to you
 ```
 
 ## TUI Keybindings
@@ -41,34 +51,78 @@ pr-dashboard list --mine     # list your PRs
 |-----|--------|
 | `?` | Help screen |
 | `Tab` | Toggle: My PRs ↔ Reviews |
-| `r` | Refresh selected PR |
-| `Ctrl+R` | Refresh all PRs |
-| `Ctrl+S` | Full sync from all sources |
-| `d` / `Shift+D` | Remove selected / all done PRs |
-| `o` | Open PR in browser |
-| `c` | Copy PR URL to clipboard |
+| `s` | Refresh all PRs |
+| `S` | Full sync (discover sources + fetch PRs) |
+| `d` / `D` | Remove selected / all done PRs |
+| `O` | Open PR in browser |
+| `o` | Copy PR URL to clipboard |
 | `/` | Filter by title, author, repo, ID |
+| `Space` | Pin/unpin selected PR |
+| `f` | Toggle pinned-only filter |
 | `v` | Peek at description & comments |
+| `a` | Add PR by URL |
+| `m` | Manage repos (include/exclude) |
+| `M` | Manage sources (include/exclude) |
 | `i` | Connected sources & accounts |
 | `l` | Activity log |
 | `Esc` | Clear filter / close modal |
 
 All keybindings are configurable via `config.json`. Press `?` to see current bindings.
 
+## Source & Repo Management
+
+Sources (ADO orgs, GitHub) and repos are auto-discovered on sync. You can include/exclude them to control what gets synced.
+
+### Data Model
+
+Sources and repos each have three lists:
+- **discovered** — auto-populated on every sync (overwritten each time)
+- **include** — manually added items (persist across syncs)
+- **exclude** — items to skip during sync
+
+**Active** = (discovered ∪ include) − exclude
+
+### TUI Management
+
+- Press `M` to manage sources — toggle with `Space` (✓ active / ✗ excluded)
+- Press `m` to manage repos — toggle with `Space`, or type a repo URL to add
+
+Toggle behavior:
+- Discovered items get excluded (✗ marker) — they stay in the list
+- Include-only items get deleted entirely (disappear from the list)
+
+### CLI Management
+
+```bash
+# Sources
+pr-dashboard sources                          # list all sources with status
+pr-dashboard sources include ado/myorg        # manually include a source
+pr-dashboard sources exclude ado/myorg        # exclude a source from sync
+
+# Repos
+pr-dashboard repos                            # list all repos with status
+pr-dashboard repos include ado/myorg MyRepo   # manually include a repo
+pr-dashboard repos exclude ado/myorg MyRepo   # exclude a repo from sync
+
+# Repos can reference excluded sources — only those specific repos sync
+```
+
 ## CLI Commands
 
 ```
-pr-dashboard sync                          # fetch from all sources
+pr-dashboard                                # launch TUI
+pr-dashboard sync                           # discover sources + fetch PRs
 pr-dashboard list [--mine|--reviews] [--urls] [--json]
 pr-dashboard show <id> [--json]
 pr-dashboard refresh <id> | --all
-pr-dashboard add <url>                     # add PR by URL
+pr-dashboard add <url>                      # add PR by ADO or GitHub URL
 pr-dashboard remove <id>
-pr-dashboard clean                         # remove completed/abandoned
-pr-dashboard config                        # show config file location
-pr-dashboard sources [all]
-pr-dashboard register {ado|github|all} [org]
-pr-dashboard unregister <source>
+pr-dashboard clean                          # remove completed/abandoned
+pr-dashboard config                         # show config file location
+pr-dashboard sources [include|exclude] [source]
+pr-dashboard repos [include|exclude] [source] [repo]
+pr-dashboard exclude <source> <repo>        # shortcut for repos exclude
+pr-dashboard include <source> <repo>        # shortcut for repos include
 ```
 
 ## Configuration
@@ -104,9 +158,48 @@ A bundled example (`extensions/open-worktree.ps1`) opens VS Code at the git work
 ## Features
 
 - **Multi-source**: Azure DevOps (multiple orgs) + GitHub side-by-side
-- **Auto-discovery**: finds all your ADO orgs automatically
+- **Auto-discovery**: finds all your ADO orgs and repos automatically on sync
+- **Source/repo management**: include/exclude sources and repos via TUI or CLI
 - **Code review tracking**: separate views for authored PRs and reviews
+- **Add PRs by URL**: manually track any PR from the TUI (`a`) or CLI
+- **Pin PRs**: pin important PRs to the top of the list (`f`)
 - **Rich detail panel**: reviewers, checks, comments, work items, timestamps
 - **Merge conflict detection**: ⚠ indicator for ADO and GitHub
 - **Comment threads**: peek shows full thread content with file:line context
+- **Animated sync spinner**: visual feedback during sync operations
+- **Parallel sync**: sources synced concurrently with rate limiting
 - **Extensible**: run custom scripts with PR context via hotkeys
+
+## Development
+
+### Setup
+
+```bash
+git clone https://github.com/Yosi-Hezi/pr-dashboard
+cd pr-dashboard
+uv sync                # create .venv and install dependencies
+```
+
+### Run locally
+
+```bash
+# Install as editable — creates pr-dashboard.exe in .venv/Scripts
+uv sync --reinstall-package pr-dashboard
+
+# Run
+.venv/Scripts/pr-dashboard          # TUI
+.venv/Scripts/pr-dashboard sync     # CLI
+```
+
+After code changes, re-run `uv sync --reinstall-package pr-dashboard` to rebuild.
+
+### Tests, lint, format
+
+```bash
+# Run all tests
+.venv/Scripts/python -m pytest tests/ -v --tb=short
+
+# Format + lint (install ruff first if needed: uv pip install ruff)
+ruff format src/ tests/
+ruff check src/ tests/ --fix
+```

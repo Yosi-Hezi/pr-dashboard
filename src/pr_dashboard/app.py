@@ -32,7 +32,15 @@ from .formatting import (
 )
 from .gh_client import GhClient
 from .logger import get_logger
-from .screens import HelpScreen, InfoScreen, LogScreen, PeekScreen
+from .screens import (
+    AddPrScreen,
+    HelpScreen,
+    InfoScreen,
+    LogScreen,
+    ManageReposScreen,
+    ManageSourcesScreen,
+    PeekScreen,
+)
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.coordinate import Coordinate
@@ -149,7 +157,13 @@ class PRDashboard(App):
     def check_action(self, action: str, parameters: tuple) -> bool | None:
         """Disable priority bindings when a modal screen is active."""
         if len(self.screen_stack) > 1:
-            if action == "toggle_view" or action.startswith("ext_"):
+            blocked = {
+                "toggle_view",
+                "add_pr",
+                "manage_sources",
+                "manage_repos",
+            }
+            if action in blocked or action.startswith("ext_"):
                 return False
         return True
 
@@ -187,12 +201,12 @@ class PRDashboard(App):
         table.add_columns(*headers)
 
     async def _init_auth_and_sync(self) -> None:
-        """Check auth status and auto-discover on first run."""
+        """Check auth status and sync on first run."""
 
         self.notify("Checking authentication...", timeout=5)
         log.info("Startup: checking auth status")
 
-        # Check ADO + GitHub auth in parallel, keep clients alive for reuse
+        # Check ADO + GitHub auth in parallel
         ado_client = AdoClient()
         gh_client = GhClient()
 
@@ -212,41 +226,17 @@ class PRDashboard(App):
         self._update_status_bar_accounts()
         log.info("Startup: auth complete (az=%s, gh=%s)", self._az_user, self._gh_user)
 
-        # First-run: auto-discover sources if none registered
-        sources = self.store.get_sources()
-        if not sources:
-            self.notify("First run — discovering sources...", timeout=5)
-            log.info("Startup: no sources registered, discovering orgs")
-            try:
-                orgs = await ado_client.discover_orgs()
-                for org in orgs:
-                    self.store.add_source(f"ado/{org}")
-                if self._gh_user:
-                    self.store.add_source("github")
-                sources = self.store.get_sources()
-                log.info("Auto-registered %d sources", len(sources))
-            except Exception as exc:
-                log.warning("Auto-discover failed: %s", exc)
+        await ado_client.close()
 
-        # Sync if no PRs loaded — reuse authenticated clients
-        if not self.prs and sources:
+        # Sync if no PRs loaded (sync includes source discovery)
+        if not self.prs:
             self._refreshing_all = True
-            self._start_sync_spinner(f"Syncing {len(sources)} source(s)")
-            log.info("Startup: syncing %d sources", len(sources))
+            self._start_sync_spinner("Discovering sources and syncing")
+            log.info("Startup: no cached PRs, running full sync")
             try:
-                # Build ado_clients dict from the single reusable client
-                ado_clients: dict[str, AdoClient] = {}
-                for src in sources:
-                    if src.startswith("ado/"):
-                        org = src.removeprefix("ado/")
-                        if org == ado_client.org:
-                            ado_clients[org] = ado_client
                 await self.store.sync(
-                    ado_clients=ado_clients,
                     gh_client=gh_client if self._gh_user else None,
                 )
-            except (AdoApiError, AdoAuthError) as exc:
-                self._handle_error(exc, "Sync")
             except Exception as exc:
                 self._handle_error(exc, "Sync")
             finally:
@@ -257,9 +247,6 @@ class PRDashboard(App):
             log.info("Startup: complete, %d PRs loaded", len(self.prs))
         else:
             log.info("Startup: %d cached PRs, skipping sync", len(self.prs))
-
-        # Clean up the reusable ADO client
-        await ado_client.close()
 
     def _update_title(self) -> None:
         """Update app title to reflect current view mode."""
@@ -278,7 +265,7 @@ class PRDashboard(App):
         else:
             parts.append("🔴 gh:disconnected")
 
-        sources = self.store.get_sources()
+        sources = self.store.get_active_sources()
         parts.append(f"{len(sources)} sources")
 
         # Show view mode
@@ -615,8 +602,8 @@ class PRDashboard(App):
         if self._refreshing_all:
             return
         self._refreshing_all = True
-        sources = self.store.get_sources()
-        self._start_sync_spinner(f"Syncing {len(sources)} source(s)")
+        active = self.store.get_active_sources()
+        self._start_sync_spinner(f"Syncing {len(active)} source(s)")
         self.run_worker(self._sync())
 
     async def _sync(self) -> None:
@@ -700,7 +687,7 @@ class PRDashboard(App):
             "az": self._az_user,
             "gh": self._gh_user,
         }
-        sources = self.store.get_sources()
+        sources = self.store.get_active_sources()
         self.push_screen(InfoScreen(accounts, sources))
 
     def action_peek_selected(self) -> None:
@@ -708,6 +695,49 @@ class PRDashboard(App):
         if not pr:
             return
         self.push_screen(PeekScreen(pr))
+
+    # ── Add PR ─────────────────────────────────────────────────────────────
+
+    def action_add_pr(self) -> None:
+        self.push_screen(AddPrScreen(), callback=self._on_add_pr_result)
+
+    def _on_add_pr_result(self, url: str) -> None:
+        if url:
+            self.notify("Adding PR...", timeout=5)
+            self.run_worker(self._add_pr_async(url))
+
+    async def _add_pr_async(self, url: str) -> None:
+        try:
+            entry, existed = await self.store.add_pr_by_url(url)
+            self.load_and_display()
+            verb = "Updated" if existed else "Added"
+            view = "Reviews" if entry.get("role") == "reviewer" else "My PRs"
+            self.notify(f"{verb} PR #{entry['id']} → {view}", timeout=3)
+        except ValueError as exc:
+            self.notify(str(exc), severity="error", timeout=5)
+        except Exception as exc:
+            self._handle_error(exc, "Add PR")
+
+    # ── Manage Sources ─────────────────────────────────────────────────────
+
+    def action_manage_sources(self) -> None:
+        if self._refreshing_all:
+            self.notify("Cannot manage sources while sync is running", timeout=3)
+            return
+        self.push_screen(
+            ManageSourcesScreen(self.store), callback=self._on_manage_closed
+        )
+
+    # ── Manage Repos ──────────────────────────────────────────────────────
+
+    def action_manage_repos(self) -> None:
+        if self._refreshing_all:
+            self.notify("Cannot manage repos while sync is running", timeout=3)
+            return
+        self.push_screen(ManageReposScreen(self.store), callback=self._on_manage_closed)
+
+    def _on_manage_closed(self, result=None) -> None:
+        self.load_and_display()
 
     # ── Pin/Unpin ─────────────────────────────────────────────────────────
 

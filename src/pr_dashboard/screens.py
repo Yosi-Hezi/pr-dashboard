@@ -11,7 +11,8 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Label, Markdown, Rule, Static
+from textual.widgets import Input, Label, Markdown, OptionList, Rule, Static
+from textual.widgets.option_list import Option
 
 
 def _key_display(key: str) -> str:
@@ -30,7 +31,7 @@ def _key_display(key: str) -> str:
     if "+" in key:
         mod, rest = key.split("+", 1)
         return f"{mod.capitalize()}+{_DISPLAY.get(rest, rest.upper())}"
-    return key.upper() if len(key) == 1 else key
+    return key if len(key) == 1 else key
 
 
 # Action name → human-readable description
@@ -49,6 +50,9 @@ _ACTION_DESCRIPTIONS: dict[str, str] = {
     "main.peek": "Peek at PR description & comments",
     "main.pin": "Pin/unpin selected PR",
     "main.filter_pinned": "Toggle pinned-only filter",
+    "main.add_pr": "Add PR by URL",
+    "main.manage_sources": "Manage sources (include/exclude)",
+    "main.manage_repos": "Manage repos (include/exclude)",
     "main.quit": "Exit",
 }
 
@@ -78,6 +82,10 @@ class HelpScreen(ModalScreen):
     #help-title {
         text-style: bold;
         margin-bottom: 1;
+    }
+    #help-scroll {
+        height: auto;
+        max-height: 100%;
     }
     """
 
@@ -113,16 +121,17 @@ class HelpScreen(ModalScreen):
 
         with Vertical(id="help-dialog"):
             yield Label("Keyboard Shortcuts", id="help-title")
-            yield Static(
-                f"{kb_text}\n\n"
-                "[dim]Status:   ○ Active   ↻ Waiting   ✓ Approved   ✎ Draft   » Auto-complete   ✓✓ Done   ∅ Abandoned   ⚠ Conflicts[/]\n"
-                "[dim]Votes:    ✓ Approved   ↻ Changes requested   ✗ Rejected   ! Required pending[/]\n"
-                "[dim]Checks:   ✓ Pass   ✗ Required fail   ~ Optional fail[/]\n"
-                "[dim]Comments: ✓ All resolved   💬 Unresolved threads[/]\n"
-                "[dim]Me:       Your vote (Reviews view only)[/]\n"
-                "[dim]Pin:      ★ Pinned (sorted to top)[/]\n\n"
-                f"[dim]Logs: {LOG_DIR}[/]"
-            )
+            with VerticalScroll(id="help-scroll"):
+                yield Static(
+                    f"{kb_text}\n\n"
+                    "[dim]Status:   ○ Active   ↻ Waiting   ✓ Approved   ✎ Draft   » Auto-complete   ✓✓ Done   ∅ Abandoned   ⚠ Conflicts[/]\n"
+                    "[dim]Votes:    ✓ Approved   ↻ Changes requested   ✗ Rejected   ! Required pending[/]\n"
+                    "[dim]Checks:   ✓ Pass   ✗ Required fail   ~ Optional fail[/]\n"
+                    "[dim]Comments: ✓ All resolved   💬 Unresolved threads[/]\n"
+                    "[dim]Me:       Your vote (Reviews view only)[/]\n"
+                    "[dim]Pin:      ★ Pinned (sorted to top)[/]\n\n"
+                    f"[dim]Logs: {LOG_DIR}[/]"
+                )
 
 
 class InfoScreen(ModalScreen):
@@ -153,8 +162,9 @@ class InfoScreen(ModalScreen):
         text-style: bold;
         margin-bottom: 1;
     }
-    #info-content {
-        height: 1fr;
+    #info-scroll {
+        height: auto;
+        max-height: 100%;
     }
     """
 
@@ -185,7 +195,7 @@ class InfoScreen(ModalScreen):
 
         with Vertical(id="info-dialog"):
             yield Label("Info", id="info-title")
-            with VerticalScroll(id="info-content"):
+            with VerticalScroll(id="info-scroll"):
                 yield Static("\n".join(lines))
 
 
@@ -214,9 +224,8 @@ class LogScreen(ModalScreen):
         text-style: bold;
         margin-bottom: 1;
     }
-    #log-content {
+    #log-scroll {
         height: 1fr;
-        overflow-y: auto;
     }
     """
 
@@ -227,7 +236,8 @@ class LogScreen(ModalScreen):
         with Vertical(id="log-dialog"):
             yield Label("Activity Log", id="log-title")
             yield Static(f"[dim]{LOG_DIR}[/]")
-            yield Static(content, id="log-content")
+            with VerticalScroll(id="log-scroll"):
+                yield Static(content, id="log-content")
 
 
 # ── Image sanitisation for markdown ───────────────────────────────────────
@@ -341,3 +351,284 @@ class PeekScreen(ModalScreen):
                 else:
                     yield Rule()
                     yield Markdown(f"*{active} active / {total} total comments*")
+
+
+class AddPrScreen(ModalScreen):
+    """Add a PR by URL (Azure DevOps or GitHub)."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+        Binding("tab", "noop", "", show=False, priority=True),
+    ]
+
+    def action_noop(self) -> None:
+        """Consume keys that should not leak to the main app."""
+
+    DEFAULT_CSS = """
+    AddPrScreen {
+        align: center middle;
+    }
+    #add-pr-dialog {
+        width: 76;
+        height: auto;
+        border: thick $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+    #add-pr-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="add-pr-dialog"):
+            yield Label("Add PR", id="add-pr-title")
+            yield Static("Enter a PR URL (Azure DevOps or GitHub):")
+            yield Input(
+                placeholder="https://dev.azure.com/.../pullrequest/N  or  https://github.com/.../pull/N",
+                id="pr-url-input",
+            )
+            yield Static("[dim]Enter: Add · Escape: Cancel[/]")
+
+    def on_mount(self) -> None:
+        self.query_one("#pr-url-input", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "pr-url-input":
+            url = event.value.strip()
+            if url:
+                self.dismiss(url)
+
+    def action_cancel(self) -> None:
+        self.dismiss("")
+
+
+class ManageSourcesScreen(ModalScreen):
+    """Include and exclude PR sources from the TUI."""
+
+    BINDINGS = [
+        Binding("escape", "handle_escape", "Close", priority=True),
+        Binding("S", "close", "Close"),
+        Binding("space", "toggle_source", "Toggle"),
+        Binding("a", "show_add_ado", "Add ADO"),
+        Binding("tab", "noop", "", show=False, priority=True),
+    ]
+
+    def action_noop(self) -> None:
+        """Consume keys that should not leak to the main app."""
+
+    DEFAULT_CSS = """
+    ManageSourcesScreen {
+        align: center middle;
+    }
+    #sources-dialog {
+        width: 58;
+        height: auto;
+        max-height: 70%;
+        border: thick $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+    #sources-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    #sources-list {
+        height: auto;
+        max-height: 14;
+    }
+    .sources-hidden {
+        display: none;
+    }
+    """
+
+    def __init__(self, store) -> None:
+        super().__init__()
+        self._store = store
+        self._items: list[tuple[str, bool]] = []
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="sources-dialog"):
+            yield Label("Manage Sources", id="sources-title")
+            yield OptionList(id="sources-list")
+            yield Input(
+                placeholder="ADO org name (Enter to add, Escape to cancel)",
+                id="ado-org-input",
+                classes="sources-hidden",
+            )
+            yield Static("[dim]Space: Toggle · a: Add ADO · S/Esc: Close[/]")
+
+    def on_mount(self) -> None:
+        self._refresh_list()
+        self.query_one("#sources-list", OptionList).focus()
+
+    def _refresh_list(self) -> None:
+        self._items = self._store.get_sources_for_manage()
+        ol = self.query_one("#sources-list", OptionList)
+        ol.clear_options()
+        if self._items:
+            for src, is_active in self._items:
+                icon = "✓" if is_active else "✗"
+                label = f"{icon} {source_label(src)}"
+                if not is_active:
+                    label += " (excluded)"
+                ol.add_option(Option(label, id=src))
+        else:
+            ol.add_option(Option("No sources — sync to discover", disabled=True))
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+    def action_handle_escape(self) -> None:
+        inp = self.query_one("#ado-org-input", Input)
+        if inp.has_class("sources-hidden"):
+            self.dismiss(None)
+        else:
+            inp.add_class("sources-hidden")
+            inp.value = ""
+            self.query_one("#sources-list", OptionList).focus()
+
+    def action_toggle_source(self) -> None:
+        ol = self.query_one("#sources-list", OptionList)
+        idx = ol.highlighted
+        if idx is not None and idx < len(self._items):
+            source, _ = self._items[idx]
+            self._store.toggle_source(source)
+            self._refresh_list()
+            new_count = len(self._items)
+            if new_count > 0:
+                ol.highlighted = min(idx, new_count - 1)
+
+    def action_show_add_ado(self) -> None:
+        inp = self.query_one("#ado-org-input", Input)
+        inp.remove_class("sources-hidden")
+        inp.focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "ado-org-input":
+            org = event.value.strip()
+            if org:
+                self._store.include_source(f"ado/{org}")
+                self._refresh_list()
+            event.input.value = ""
+            event.input.add_class("sources-hidden")
+            self.query_one("#sources-list", OptionList).focus()
+
+
+class ManageReposScreen(ModalScreen):
+    """Include or exclude repos from review sync."""
+
+    BINDINGS = [
+        Binding("escape", "handle_escape", "Close", priority=True),
+        Binding("m", "close", "Close"),
+        Binding("space", "toggle_repo", "Toggle"),
+        Binding("a", "show_add_repo", "Add repo"),
+        Binding("tab", "noop", "", show=False, priority=True),
+    ]
+
+    def action_noop(self) -> None:
+        """Consume keys that should not leak to the main app."""
+
+    DEFAULT_CSS = """
+    ManageReposScreen {
+        align: center middle;
+    }
+    #repos-dialog {
+        width: 72;
+        height: auto;
+        max-height: 80%;
+        border: thick $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+    #repos-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    #repos-list {
+        height: auto;
+        max-height: 22;
+    }
+    .repos-hidden {
+        display: none;
+    }
+    """
+
+    def __init__(self, store) -> None:
+        super().__init__()
+        self._store = store
+        self._items: list[tuple[dict, bool]] = []
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="repos-dialog"):
+            yield Label("Manage Repos", id="repos-title")
+            yield Static("[dim]Toggle repos to include/exclude from sync[/]")
+            yield OptionList(id="repos-list")
+            yield Input(
+                placeholder="source repo (e.g. ado/msazure Networking-nrp)",
+                id="repo-add-input",
+                classes="repos-hidden",
+            )
+            yield Static("[dim]Space: Toggle · a: Add repo · m/Esc: Close[/]")
+
+    def on_mount(self) -> None:
+        self._refresh_list()
+        self.query_one("#repos-list", OptionList).focus()
+
+    def _refresh_list(self) -> None:
+        self._items = self._store.get_repos_for_manage()
+        ol = self.query_one("#repos-list", OptionList)
+        ol.clear_options()
+        if self._items:
+            for repo_entry, is_active in self._items:
+                src = repo_entry["source"]
+                repo = repo_entry["repo"]
+                icon = "✓" if is_active else "✗"
+                label = f"{icon} {source_label(src)} :: {repo}"
+                if not is_active:
+                    label += " (excluded)"
+                ol.add_option(Option(label, id=f"{src}|{repo}"))
+        else:
+            ol.add_option(Option("No repos — sync to discover", disabled=True))
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+    def action_handle_escape(self) -> None:
+        inp = self.query_one("#repo-add-input", Input)
+        if inp.has_class("repos-hidden"):
+            self.dismiss(None)
+        else:
+            inp.add_class("repos-hidden")
+            inp.value = ""
+            self.query_one("#repos-list", OptionList).focus()
+
+    def action_toggle_repo(self) -> None:
+        ol = self.query_one("#repos-list", OptionList)
+        idx = ol.highlighted
+        if idx is not None and idx < len(self._items):
+            repo_entry, _ = self._items[idx]
+            self._store.toggle_repo(repo_entry["source"], repo_entry["repo"])
+            self._refresh_list()
+            new_count = len(self._items)
+            if new_count > 0:
+                ol.highlighted = min(idx, new_count - 1)
+
+    def action_show_add_repo(self) -> None:
+        inp = self.query_one("#repo-add-input", Input)
+        inp.remove_class("repos-hidden")
+        inp.focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "repo-add-input":
+            text = event.value.strip()
+            if text:
+                parts = text.split(maxsplit=1)
+                if len(parts) == 2:
+                    source, repo = parts
+                    self._store.include_repo(source, repo)
+                    self._refresh_list()
+            event.input.value = ""
+            event.input.add_class("repos-hidden")
+            self.query_one("#repos-list", OptionList).focus()
