@@ -394,6 +394,7 @@ async def cmd_config(action: str | None = None) -> None:
             effective = {
                 "keybindings": get_keybindings(),
                 "display": get_display_config(),
+                "sync": get_sync_config(),
                 "extensions": get_extensions(),
                 "theme": load_config().get("theme", "textual-dark"),
             }
