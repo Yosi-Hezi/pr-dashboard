@@ -350,7 +350,7 @@ class PRDashboard(App):
                 for c in columns
             ]
             table.add_row(*row_data, key=row_key)
-            style = pr_row_style(pr, rules=row_rules)
+            style, _matched = pr_row_style(pr, rules=row_rules)
             if style:
                 row_styles[idx] = style
         table.set_row_styles(row_styles)
@@ -556,6 +556,12 @@ class PRDashboard(App):
             signal_parts.append("! Vote needed" if pr_conds.get("isRequiredReviewer") else "· Vote pending")
         if signal_parts:
             parts.append(f"[bold]Signals:[/] {' [dim]│[/] '.join(signal_parts)}")
+
+        # Show matched rule description (recommended action) if present
+        row_rules = self._display_cfg.get("row_rules", [])
+        _style, matched_rule = pr_row_style(pr, rules=row_rules)
+        if matched_rule and matched_rule.get("description"):
+            parts.append(f"[bold yellow]→ {esc(matched_rule['description'])}[/]")
 
         panel.update("\n".join(parts))
 

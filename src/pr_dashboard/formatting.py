@@ -246,11 +246,12 @@ def evaluate_pr_conditions(pr: dict) -> dict:
     }
 
 
-def pr_row_style(pr: dict, rules: list[dict] | None = None) -> Style | None:
-    """Return row style based on configurable signal rules.
+def pr_row_style(pr: dict, rules: list[dict] | None = None) -> tuple[Style | None, dict | None]:
+    """Return (row_style, matched_rule) based on configurable signal rules.
 
     Each rule: 'conditions' dict (all must match), plus style keys:
     'color' (bgcolor), 'bold', 'italic', 'strikethrough'.
+    Optional 'description' shown in detail panel.
     First matching rule wins.
     """
     if rules is None:
@@ -266,13 +267,14 @@ def pr_row_style(pr: dict, rules: list[dict] | None = None) -> Style | None:
         if all(pr_conds.get(k) == v for k, v in conditions.items()):
             color = rule.get("color", "")
             if color:
-                return Style(
+                style = Style(
                     bgcolor=color,
                     bold=True if rule.get("bold") else None,
                     italic=True if rule.get("italic") else None,
                     strike=True if rule.get("strikethrough") else None,
                 )
-    return None
+                return style, rule
+    return None, None
 
 
 def format_source(source: str) -> str:

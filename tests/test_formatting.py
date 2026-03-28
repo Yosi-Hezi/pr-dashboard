@@ -267,53 +267,55 @@ class TestFormatPin:
 class TestPrRowStyle:
     def test_approved_pr(self):
         pr = {"status": "active", "reviews": [{"vote": "Approved", "isRequired": True}]}
-        style = pr_row_style(pr)
+        style, rule = pr_row_style(pr)
         assert style is not None
         assert style.bgcolor.name == "#2d4a2d"
 
     def test_completed_pr(self):
-        style = pr_row_style({"status": "completed"})
+        style, rule = pr_row_style({"status": "completed"})
         assert style is not None
         assert style.bgcolor.name == "#2d3a4a"
         assert style.strike is True
 
     def test_abandoned_pr(self):
-        style = pr_row_style({"status": "abandoned"})
+        style, rule = pr_row_style({"status": "abandoned"})
         assert style is not None
         assert style.bgcolor.name == "#4a2d2d"
         assert style.strike is True
 
     def test_active_pr_no_style(self):
         pr = {"status": "active", "reviews": []}
-        assert pr_row_style(pr) is None
+        style, rule = pr_row_style(pr)
+        assert style is None
 
     def test_draft_pr_no_style(self):
         pr = {"status": "active", "isDraft": True, "reviews": []}
-        assert pr_row_style(pr) is None
+        style, rule = pr_row_style(pr)
+        assert style is None
 
     def test_merge_conflicts(self):
         pr = {"status": "active", "mergeStatus": "conflicts", "reviews": []}
-        style = pr_row_style(pr)
+        style, rule = pr_row_style(pr)
         assert style is not None
         assert style.bgcolor.name == "#4a2d2d"
         assert style.italic is True
 
     def test_author_active_comments(self):
         pr = {"status": "active", "role": "author", "commentsActive": 3, "commentsTotal": 5, "reviews": []}
-        style = pr_row_style(pr)
+        style, rule = pr_row_style(pr)
         assert style is not None
         assert style.bgcolor.name == "#4a3d1a"
         assert style.bold is True
 
     def test_reviewer_novote_required(self):
         pr = {"status": "active", "role": "reviewer", "myVote": "NoVote", "isRequiredReviewer": True, "reviews": []}
-        style = pr_row_style(pr)
+        style, rule = pr_row_style(pr)
         assert style is not None
         assert style.bgcolor.name == "#3d3a1a"
 
     def test_reviewer_novote_optional(self):
         pr = {"status": "active", "role": "reviewer", "myVote": "NoVote", "isRequiredReviewer": False, "reviews": []}
-        style = pr_row_style(pr)
+        style, rule = pr_row_style(pr)
         assert style is not None
         assert style.bgcolor.name == "#3a3a2a"
 
@@ -339,28 +341,32 @@ class TestPrRowStyleConfigurable:
     def test_custom_rules(self):
         rules = [{"conditions": {"status": "Draft"}, "color": "#112233"}]
         pr = {"status": "active", "isDraft": True, "reviews": []}
-        style = pr_row_style(pr, rules=rules)
+        style, rule = pr_row_style(pr, rules=rules)
         assert style is not None
         assert style.bgcolor.name == "#112233"
 
     def test_merge_status_rule(self):
         rules = [{"conditions": {"mergeStatus": "conflicts"}, "color": "#443322"}]
         pr = {"status": "active", "mergeStatus": "conflicts", "reviews": []}
-        style = pr_row_style(pr, rules=rules)
+        style, rule = pr_row_style(pr, rules=rules)
         assert style is not None
 
     def test_no_match(self):
         rules = [{"conditions": {"status": "Completed"}, "color": "#aabbcc"}]
         pr = {"status": "active", "reviews": []}
-        assert pr_row_style(pr, rules=rules) is None
+        style, rule = pr_row_style(pr, rules=rules)
+        assert style is None
+        assert rule is None
 
     def test_empty_rules(self):
-        assert pr_row_style({"status": "active", "reviews": []}, rules=[]) is None
+        style, rule = pr_row_style({"status": "active", "reviews": []}, rules=[])
+        assert style is None
+        assert rule is None
 
     def test_style_bold_italic(self):
         rules = [{"conditions": {"status": "Active"}, "color": "#111111", "bold": True, "italic": True}]
         pr = {"status": "active", "reviews": []}
-        style = pr_row_style(pr, rules=rules)
+        style, rule = pr_row_style(pr, rules=rules)
         assert style is not None
         assert style.bold is True
         assert style.italic is True
@@ -368,7 +374,7 @@ class TestPrRowStyleConfigurable:
     def test_empty_conditions_skipped(self):
         rules = [{"conditions": {}, "color": "#111111"}, {"conditions": {"status": "Active"}, "color": "#222222"}]
         pr = {"status": "active", "reviews": []}
-        style = pr_row_style(pr, rules=rules)
+        style, rule = pr_row_style(pr, rules=rules)
         assert style is not None
         assert style.bgcolor.name == "#222222"
 
@@ -378,20 +384,36 @@ class TestPrRowStyleConfigurable:
             {"conditions": {"status": "Active"}, "color": "#222222"},
         ]
         pr = {"status": "active", "reviews": []}
-        style = pr_row_style(pr, rules=rules)
+        style, rule = pr_row_style(pr, rules=rules)
         assert style.bgcolor.name == "#111111"
 
     def test_multi_condition_match(self):
         rules = [{"conditions": {"role": "reviewer", "myVote": "NoVote"}, "color": "#333333"}]
         pr = {"status": "active", "role": "reviewer", "myVote": "NoVote", "reviews": []}
-        style = pr_row_style(pr, rules=rules)
+        style, rule = pr_row_style(pr, rules=rules)
         assert style is not None
         assert style.bgcolor.name == "#333333"
 
     def test_multi_condition_no_match(self):
         rules = [{"conditions": {"role": "reviewer", "myVote": "NoVote"}, "color": "#333333"}]
         pr = {"status": "active", "role": "author", "myVote": "NoVote", "reviews": []}
-        assert pr_row_style(pr, rules=rules) is None
+        style, rule = pr_row_style(pr, rules=rules)
+        assert style is None
+        assert rule is None
+
+    def test_description_returned(self):
+        rules = [{"conditions": {"status": "Active"}, "color": "#111111", "description": "Do something"}]
+        pr = {"status": "active", "reviews": []}
+        style, rule = pr_row_style(pr, rules=rules)
+        assert style is not None
+        assert rule["description"] == "Do something"
+
+    def test_no_description(self):
+        rules = [{"conditions": {"status": "Active"}, "color": "#111111"}]
+        pr = {"status": "active", "reviews": []}
+        style, rule = pr_row_style(pr, rules=rules)
+        assert style is not None
+        assert rule.get("description") is None
 
 
 # ── evaluate_pr_conditions ──────────────────────────────────────
