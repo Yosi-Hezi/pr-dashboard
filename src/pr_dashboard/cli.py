@@ -392,7 +392,14 @@ async def run(args: argparse.Namespace) -> None:
     try:
         match args.command:
             case "sync":
-                await cmd_sync(store, as_json)
+                pr_id = getattr(args, "pr_id", None)
+                refresh = getattr(args, "refresh", False)
+                if pr_id:
+                    await cmd_refresh(store, pr_id, as_json)
+                elif refresh:
+                    await cmd_refresh_all(store, as_json)
+                else:
+                    await cmd_sync(store, as_json)
             case "list":
                 role = ""
                 if getattr(args, "mine", False):
@@ -404,14 +411,6 @@ async def run(args: argparse.Namespace) -> None:
                 )
             case "show":
                 await cmd_show(store, args.pr_id, as_json)
-            case "refresh":
-                if args.all:
-                    await cmd_refresh_all(store, as_json)
-                else:
-                    if not args.pr_id:
-                        console.print("[red]Error: provide a PR ID or use --all[/]")
-                        sys.exit(1)
-                    await cmd_refresh(store, args.pr_id, as_json)
             case "remove":
                 await cmd_remove(store, args.pr_id)
             case "clean":
@@ -469,7 +468,13 @@ def main() -> None:
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("sync", help="Fetch PRs from all registered sources")
+    sync_p = sub.add_parser("sync", help="Fetch PRs from all registered sources")
+    sync_p.add_argument("pr_id", nargs="?", type=int, help="Refresh a specific tracked PR by ID")
+    sync_p.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Refresh all tracked PRs without source discovery",
+    )
     list_p = sub.add_parser("list", help="List tracked PRs (local data)")
     list_p.add_argument("--urls", action="store_true", help="Compact view with URLs")
     list_grp = list_p.add_mutually_exclusive_group()
@@ -480,10 +485,6 @@ def main() -> None:
 
     show_p = sub.add_parser("show", help="Show detailed info for a PR")
     show_p.add_argument("pr_id", type=int, help="PR ID to show")
-
-    refresh_p = sub.add_parser("refresh", help="Refresh a PR or all PRs")
-    refresh_p.add_argument("pr_id", nargs="?", type=int, help="PR ID to refresh")
-    refresh_p.add_argument("--all", action="store_true", help="Refresh all tracked PRs")
 
     remove_p = sub.add_parser("remove", help="Remove a PR from tracking")
     remove_p.add_argument("pr_id", type=int, help="PR ID to remove")

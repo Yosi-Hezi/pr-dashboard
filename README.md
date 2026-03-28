@@ -112,9 +112,10 @@ pr-dashboard repos exclude ado/myorg MyRepo   # exclude a repo from sync
 ```
 pr-dashboard                                # launch TUI
 pr-dashboard sync                           # discover sources + fetch PRs
+pr-dashboard sync --refresh                 # refresh tracked PRs (no discovery)
+pr-dashboard sync <id>                      # refresh a specific PR
 pr-dashboard list [--mine|--reviews] [--urls] [--json]
 pr-dashboard show <id> [--json]
-pr-dashboard refresh <id> | --all
 pr-dashboard add <url>                      # add PR by ADO or GitHub URL
 pr-dashboard remove <id>
 pr-dashboard clean                          # remove completed/abandoned

@@ -74,10 +74,10 @@ All keybindings are **configurable** via `config.json` in the data directory. Pr
 
 ```
 pr-dashboard sync               # discover sources + fetch PRs
+pr-dashboard sync --refresh     # refresh tracked PRs (no discovery)
+pr-dashboard sync <id>          # refresh a specific PR
 pr-dashboard list [--mine|--reviews] [--urls] [--json]
 pr-dashboard show <id> [--json]
-pr-dashboard refresh <id>       # refresh single PR
-pr-dashboard refresh --all      # refresh all
 pr-dashboard add <url>          # add PR by ADO or GitHub URL
 pr-dashboard remove <id>
 pr-dashboard clean              # remove completed/abandoned PRs
