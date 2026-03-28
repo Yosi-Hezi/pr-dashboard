@@ -401,6 +401,9 @@ async def run(args: argparse.Namespace) -> None:
                 else:
                     await cmd_sync(store, as_json)
             case "list":
+                if getattr(args, "sync", False):
+                    console.print("[dim]Refreshing tracked PRs...[/]", highlight=False)
+                    await store.refresh_all()
                 role = ""
                 if getattr(args, "mine", False):
                     role = "author"
@@ -481,6 +484,7 @@ def main() -> None:
     )
     list_p = sub.add_parser("list", help="List tracked PRs (local data)")
     list_p.add_argument("--urls", action="store_true", help="Compact view with URLs")
+    list_p.add_argument("--sync", action="store_true", help="Refresh tracked PRs before listing")
     list_grp = list_p.add_mutually_exclusive_group()
     list_grp.add_argument("--mine", action="store_true", help="Show only authored PRs")
     list_grp.add_argument(
