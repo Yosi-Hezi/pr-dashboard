@@ -31,7 +31,7 @@ def _key_display(key: str) -> str:
     if "+" in key:
         mod, rest = key.split("+", 1)
         return f"{mod.capitalize()}+{_DISPLAY.get(rest, rest.upper())}"
-    return key.upper() if len(key) == 1 else key
+    return key if len(key) == 1 else key
 
 
 # Action name → human-readable description
@@ -457,9 +457,7 @@ class ManageSourcesScreen(ModalScreen):
                 id="ado-org-input",
                 classes="sources-hidden",
             )
-            yield Static(
-                "[dim]Space: Toggle · a: Add ADO · S/Esc: Close[/]"
-            )
+            yield Static("[dim]Space: Toggle · a: Add ADO · S/Esc: Close[/]")
 
     def on_mount(self) -> None:
         self._refresh_list()

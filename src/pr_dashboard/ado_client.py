@@ -67,9 +67,7 @@ class AdoClient:
                 if self._pre_token:
                     bearer = self._pre_token
                 else:
-                    tok = await asyncio.to_thread(
-                        self._credential.get_token, ADO_SCOPE
-                    )
+                    tok = await asyncio.to_thread(self._credential.get_token, ADO_SCOPE)
                     bearer = tok.token
                 self._http = httpx.AsyncClient(
                     headers={"Authorization": f"Bearer {bearer}"},

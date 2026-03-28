@@ -721,6 +721,9 @@ class PRDashboard(App):
     # ── Manage Sources ─────────────────────────────────────────────────────
 
     def action_manage_sources(self) -> None:
+        if self._refreshing_all:
+            self.notify("Cannot manage sources while sync is running", timeout=3)
+            return
         self.push_screen(
             ManageSourcesScreen(self.store), callback=self._on_manage_closed
         )
@@ -728,6 +731,9 @@ class PRDashboard(App):
     # ── Manage Repos ──────────────────────────────────────────────────────
 
     def action_manage_repos(self) -> None:
+        if self._refreshing_all:
+            self.notify("Cannot manage repos while sync is running", timeout=3)
+            return
         self.push_screen(ManageReposScreen(self.store), callback=self._on_manage_closed)
 
     def _on_manage_closed(self, result=None) -> None:

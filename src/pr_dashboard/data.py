@@ -546,12 +546,16 @@ class PrDataStore:
 
             # GitHub
             gh_disc = gh_client or GhClient()
+            gh_disc_is_local = gh_client is None
             try:
                 gh_user = await gh_disc.check_auth()
                 if gh_user:
                     discovered_sources.append("github")
             except Exception as exc:
                 log.warning("Source discovery (GitHub) failed: %s", exc)
+            finally:
+                if gh_disc_is_local:
+                    await gh_disc.close()
 
             sources["discovered"] = discovered_sources
             log.info(

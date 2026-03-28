@@ -65,10 +65,7 @@ async def cmd_repos_include(store: PrDataStore, source: str, repo: str) -> None:
 
 async def cmd_repos_exclude(store: PrDataStore, source: str, repo: str) -> None:
     """Exclude a repo."""
-    result = store.toggle_repo(source, repo)
-    if result == "excluded":
+    if store.exclude_repo(source, repo):
         console.print(f"Excluded repo [bold]{source} :: {repo}[/].")
-    elif result is None:
-        console.print(f"[dim]{source} :: {repo} not found or already removed.[/]")
     else:
-        console.print(f"[dim]{source} :: {repo} is now active.[/]")
+        console.print(f"[dim]{source} :: {repo} already excluded.[/]")
