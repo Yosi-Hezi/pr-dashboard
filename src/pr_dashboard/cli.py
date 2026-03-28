@@ -328,16 +328,58 @@ async def cmd_include(store: PrDataStore, source: str, repo: str) -> None:
         console.print(f"[dim]{source} :: {repo} already included.[/]", highlight=False)
 
 
-async def cmd_config() -> None:
-    from .config import CONFIG_DIR, CONFIG_FILE
+async def cmd_config(action: str | None = None) -> None:
+    from .config import CONFIG_DIR, CONFIG_FILE, get_full_defaults, load_config
 
-    if not CONFIG_FILE.exists():
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        CONFIG_FILE.write_text("{}\n", encoding="utf-8")
-        console.print(f"[green]Created:[/] {CONFIG_FILE}")
-    else:
-        console.print(f"[bold]Config file:[/] {CONFIG_FILE}")
-    console.print(f"[bold]Config dir:[/]  {CONFIG_DIR}")
+    match action:
+        case "show":
+            # Print effective merged config
+            from .config import get_extensions, get_keybindings
+
+            effective = {
+                "keybindings": get_keybindings(),
+                "display": get_display_config(),
+                "extensions": get_extensions(),
+                "theme": load_config().get("theme", "textual-dark"),
+            }
+            console.print_json(json.dumps(effective, indent=2, default=str))
+        case "defaults":
+            # Print default config as reference
+            console.print_json(json.dumps(get_full_defaults(), indent=2, default=str))
+        case "reset":
+            if CONFIG_FILE.exists():
+                CONFIG_FILE.unlink()
+                console.print(f"[green]Deleted:[/] {CONFIG_FILE}")
+                console.print("[dim]All settings reset to defaults.[/]")
+            else:
+                console.print("[dim]No config file found — already using defaults.[/]")
+        case "edit":
+            import os
+            import subprocess
+
+            if not CONFIG_FILE.exists():
+                CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+                CONFIG_FILE.write_text("{}\n", encoding="utf-8")
+                console.print(f"[green]Created:[/] {CONFIG_FILE}")
+            editor = os.environ.get("EDITOR") or os.environ.get("VISUAL")
+            if editor:
+                subprocess.run([editor, str(CONFIG_FILE)])
+            else:
+                # Windows: use default file association
+                os.startfile(str(CONFIG_FILE))
+        case _:
+            # Default: show location (backward compatible)
+            if not CONFIG_FILE.exists():
+                CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+                CONFIG_FILE.write_text("{}\n", encoding="utf-8")
+                console.print(f"[green]Created:[/] {CONFIG_FILE}")
+            else:
+                console.print(f"[bold]Config file:[/] {CONFIG_FILE}")
+            console.print(f"[bold]Config dir:[/]  {CONFIG_DIR}")
+            console.print(
+                "\n[dim]Subcommands: config show · config defaults · "
+                "config edit · config reset[/]"
+            )
 
 
 # ── Entry point ───────────────────────────────────────────────────────────
@@ -381,7 +423,7 @@ async def run(args: argparse.Namespace) -> None:
             case "include":
                 await cmd_include(store, args.source, args.repo)
             case "config":
-                await cmd_config()
+                await cmd_config(getattr(args, "config_action", None))
             case "sources":
                 action = getattr(args, "action", None)
                 if action == "include":
@@ -461,7 +503,13 @@ def main() -> None:
     include_p.add_argument("source", help="Source (e.g., ado/msazure, github)")
     include_p.add_argument("repo", help="Repo name to include")
 
-    sub.add_parser("config", help="Show config file location")
+    config_p = sub.add_parser("config", help="Show/manage config (show, defaults, edit, reset)")
+    config_p.add_argument(
+        "config_action",
+        nargs="?",
+        choices=["show", "defaults", "edit", "reset"],
+        help="Action: show (effective), defaults (reference), edit (open editor), reset (delete config)",
+    )
 
     sources_p = sub.add_parser("sources", help="List/manage sources")
     sources_p.add_argument(

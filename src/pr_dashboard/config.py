@@ -119,6 +119,16 @@ def _validate_keybindings(bindings: dict) -> dict[str, str]:
 
 def load_config() -> dict:
     """Load config.json. Returns empty-dict sections if file missing/invalid."""
+    # Write reference defaults file if missing
+    _defaults_file = CONFIG_DIR / "config.default.json"
+    try:
+        defaults_json = json.dumps(get_full_defaults(), indent=2, default=str)
+        if not _defaults_file.exists() or _defaults_file.read_text(encoding="utf-8") != defaults_json:
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            _defaults_file.write_text(defaults_json, encoding="utf-8")
+    except OSError:
+        pass  # non-critical
+
     if not CONFIG_FILE.exists():
         return {"keybindings": {}, "extensions": []}
 
@@ -438,3 +448,22 @@ def get_extensions() -> list[dict]:
     """Return validated extension definitions from config."""
     config = load_config()
     return _validate_extensions(config.get("extensions", []))
+
+
+def get_full_defaults() -> dict:
+    """Return the complete default configuration as a serializable dict."""
+    return {
+        "keybindings": dict(DEFAULT_KEYBINDINGS),
+        "display": {
+            "columns": {
+                "mine": list(DEFAULT_DISPLAY["columns"]["mine"]),
+                "reviews": list(DEFAULT_DISPLAY["columns"]["reviews"]),
+            },
+            "column_widths": dict(DEFAULT_DISPLAY["column_widths"]),
+            "truncation_suffix": DEFAULT_DISPLAY["truncation_suffix"],
+            "row_rules": list(DEFAULT_DISPLAY["row_rules"]),
+            "footer_actions": list(DEFAULT_FOOTER_ACTIONS),
+        },
+        "extensions": [],
+        "theme": "textual-dark",
+    }
