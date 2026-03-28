@@ -205,7 +205,8 @@ async def _auto_sync_if_stale(store: PrDataStore) -> None:
     last_refresh = _parse_iso(store.db.get_meta("last_refresh_time"))
     latest = max(filter(None, [last_sync, last_refresh]), default=None)
 
-    # Full sync if stale
+    # Full sync if stale — checked FIRST to prevent refresh+sync double-run.
+    # If sync triggers, it also updates last_refresh_time and returns early.
     if cfg["auto_sync_enabled"] and last_sync is not None:
         age_min = (now - last_sync).total_seconds() / 60
         if age_min >= cfg["auto_sync_interval"]:
