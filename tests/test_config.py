@@ -186,7 +186,7 @@ class TestGetDisplayConfig:
         config_file = tmp_path / "config.json"
         config_file.write_text(json.dumps({
             "display": {"row_rules": [
-                {"id": "conflicts", "enabled": False},  # triggers overlay mode
+                {"id": "conflicts", "enabled": False},
                 {"conditions": {"isDraft": True}, "color": "#333333"},
             ]}
         }))
@@ -195,19 +195,6 @@ class TestGetDisplayConfig:
         # Last rule should be the custom one
         assert cfg["row_rules"][-1]["color"] == "#333333"
         assert cfg["row_rules"][-1]["conditions"] == {"isDraft": True}
-
-    def test_full_replacement_no_ids(self, tmp_path, monkeypatch):
-        """When no user rule references a default id → full replacement (backward compat)."""
-        config_file = tmp_path / "config.json"
-        config_file.write_text(json.dumps({
-            "display": {"row_rules": [
-                {"conditions": {"status": "Active"}, "color": "#111111"},
-            ]}
-        }))
-        monkeypatch.setattr("pr_dashboard.config.CONFIG_FILE", config_file)
-        cfg = get_display_config()
-        assert len(cfg["row_rules"]) == 1
-        assert cfg["row_rules"][0]["color"] == "#111111"
 
     def test_overlay_preserves_order(self, tmp_path, monkeypatch):
         """Overlay preserves default rule order even when user overrides some."""
@@ -223,16 +210,3 @@ class TestGetDisplayConfig:
         ids = [r.get("id") for r in cfg["row_rules"]]
         # conflicts should be before abandoned (default order)
         assert ids.index("conflicts") < ids.index("abandoned")
-
-    def test_legacy_row_colors_overlay(self, tmp_path, monkeypatch):
-        """Legacy row_colors with ids triggers overlay too."""
-        config_file = tmp_path / "config.json"
-        config_file.write_text(json.dumps({
-            "display": {"row_colors": [
-                {"id": "approved", "status": "Approved", "color": "#aabbcc"},
-            ]}
-        }))
-        monkeypatch.setattr("pr_dashboard.config.CONFIG_FILE", config_file)
-        cfg = get_display_config()
-        approved = next(r for r in cfg["row_rules"] if r.get("id") == "approved")
-        assert approved["color"] == "#aabbcc"

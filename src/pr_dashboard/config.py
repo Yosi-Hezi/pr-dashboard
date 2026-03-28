@@ -406,73 +406,38 @@ def get_display_config() -> dict:
     # {"id": "conflicts", "enabled": false} disables that default.
     # {"id": "conflicts", "color": "#ff0000"} overrides the color.
     # User rules without a matching id: appended after defaults.
-    # Legacy: rules without 'id' and no overlay markers → full replacement (backward compat).
     user_rules = user_display.get("row_rules")
-    # Also accept legacy "row_colors" key
-    if user_rules is None:
-        user_rules = user_display.get("row_colors")
     if user_rules is not None and isinstance(user_rules, list):
-        # Normalize legacy format first
-        normalized_user = []
+        validated = []
         for rule in user_rules:
             if not isinstance(rule, dict):
                 log.warning("config: invalid row_rules entry: %s", rule)
                 continue
-            if "conditions" not in rule and ("status" in rule or "mergeStatus" in rule):
-                conditions = {}
-                if "status" in rule:
-                    conditions["status"] = rule["status"]
-                if "mergeStatus" in rule:
-                    conditions["mergeStatus"] = rule["mergeStatus"]
-                nr = {"conditions": conditions}
-                for k in ("color", "bold", "italic", "strikethrough", "id", "enabled", "description", "action"):
-                    if k in rule:
-                        nr[k] = rule[k]
-                normalized_user.append(nr)
+            validated.append(rule)
+
+        default_ids = {r["id"] for r in DEFAULT_DISPLAY["row_rules"]}
+        merged = []
+        user_by_id = {}
+        user_additions = []
+        for r in validated:
+            rid = r.get("id")
+            if rid and rid in default_ids:
+                user_by_id[rid] = r
             else:
-                normalized_user.append(rule)
+                user_additions.append(r)
 
-        # Detect overlay mode: any user rule references an existing default id
-        default_ids = {r["id"] for r in DEFAULT_DISPLAY["row_rules"] if "id" in r}
-        has_overlay = any(r.get("id") in default_ids for r in normalized_user)
+        for default_rule in DEFAULT_DISPLAY["row_rules"]:
+            rid = default_rule["id"]
+            if rid in user_by_id:
+                override = user_by_id[rid]
+                if override.get("enabled") is False:
+                    continue
+                merged.append({**default_rule, **override})
+            else:
+                merged.append(dict(default_rule))
 
-        if has_overlay:
-            # Overlay mode: start from defaults, apply user overrides
-            merged = []
-            user_by_id = {}
-            user_additions = []
-            for r in normalized_user:
-                rid = r.get("id")
-                if rid and rid in default_ids:
-                    user_by_id[rid] = r
-                else:
-                    user_additions.append(r)
-
-            for default_rule in DEFAULT_DISPLAY["row_rules"]:
-                rid = default_rule.get("id", "")
-                if rid in user_by_id:
-                    override = user_by_id[rid]
-                    if override.get("enabled") is False:
-                        continue  # disabled
-                    # Merge: default fields + user overrides
-                    merged_rule = {**default_rule, **override}
-                    merged.append(merged_rule)
-                else:
-                    merged.append(dict(default_rule))
-
-            # Append user additions
-            merged.extend(user_additions)
-            result["row_rules"] = merged
-        else:
-            # Full replacement (backward compatible)
-            valid_rules = [
-                r for r in normalized_user
-                if isinstance(r, dict) and (
-                    "color" in r or "bold" in r or "italic" in r
-                    or "strikethrough" in r or "enabled" in r
-                )
-            ]
-            result["row_rules"] = valid_rules
+        merged.extend(user_additions)
+        result["row_rules"] = merged
     else:
         result["row_rules"] = list(DEFAULT_DISPLAY["row_rules"])
 

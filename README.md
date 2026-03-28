@@ -176,8 +176,6 @@ Each default rule has a stable `id`. You can selectively override, disable, or e
 - **Disable a rule**: `{"id": "<rule-id>", "enabled": false}`
 - **Override fields**: `{"id": "<rule-id>", "color": "#..."}` — merges with the default
 - **Add custom rules**: rules without a matching default id append after defaults
-- **Full replacement**: if no user rule references a default id, the list fully replaces defaults (backward compatible)
-
 Press `R` in the TUI to see all active rules with their IDs, conditions, and styles.
 
 Available rule IDs: `conflicts`, `author-comments`, `reviewer-required`, `reviewer-pending-reply`, `reviewer-resolved`, `approved`, `completed`, `abandoned`, `reviewer-optional`

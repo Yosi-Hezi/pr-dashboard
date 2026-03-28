@@ -293,13 +293,12 @@ uv run pr-dashboard list --mine
 - Migration includes verification step — original file only renamed after data is confirmed in SQLite
 
 ### Configurable Row Rules
-- New `row_rules` config replaces `row_colors` for signal-based row styling
+- New `row_rules` config for signal-based row styling
 - Each rule has `conditions` (all must match) and style properties (`color`, `bold`, `italic`, `strikethrough`)
 - Rules can include `description` (shown in detail panel) and `action` (shown in Action column)
 - First matching rule wins
 - 13 computed conditions available: `role`, `status`, `isDraft`, `mergeStatus`, `myVote`, `isRequiredReviewer`, `hasActiveComments`, `allCommentsResolved`, `allRequiredApproved`, `checksPass`, `isPinned`, `myCommentPending`, `myPendingThreads`
 - 9 default rules ship out of the box (conflicts → red italic, author with comments → amber bold, re-review when author replied, etc.)
-- Legacy `row_colors` config auto-converted to new format for backward compatibility
 - Dedicated Row Rules screen (`R`) shows rules with color swatches, conditions, styles, descriptions, and column actions
 - Signal summary line added to detail panel
 
@@ -309,7 +308,6 @@ uv run pr-dashboard list --mine
 - **Disable a rule**: `{"id": "conflicts", "enabled": false}`
 - **Override fields**: `{"id": "approved", "color": "#00ff00"}` — merges with the default
 - **Add custom rules**: rules without a matching default id are appended after defaults
-- **Backward compatible**: if no user rule references a default id, full replacement applies (same as before)
 - Rule IDs shown in the Row Rules screen (`R`) for reference
 
 ### Action Column & Signal Columns
