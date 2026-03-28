@@ -262,9 +262,9 @@ uv run pr-dashboard list --mine
 - CLI uses idempotent include/exclude (safe to call repeatedly), TUI uses toggle semantics
 - Removed old `register` / `unregister` commands
 
-### Parallel Sync with Rate Limiting
+### Parallel Sync with Shared Token
 - Sources synced concurrently via `asyncio.gather` (from master merge)
-- Concurrency limited to 5 simultaneous sources via semaphore to prevent Azure CLI credential exhaustion
+- Single ADO token fetched upfront and shared across all org clients — eliminates credential exhaustion from concurrent `az.exe` spawns
 - Animated sync spinner in status bar during sync operations
 
 ### Compact Vote Display
@@ -274,4 +274,6 @@ uv run pr-dashboard list --mine
 ### Bug Fixes
 - Fixed null-safety in ADO client: `.get("key", {})` doesn't protect against explicit `null` — now uses `(.get("key") or {})`
 - Fixed duplicate PR handling: `add_pr_by_url` returns whether PR was added/updated and to which list
+- Fixed excluded repos wiped by sync — stale-cleanup now only removes excludes whose source is gone
+- Fixed key validation regex to accept uppercase letters for user-configured hotkeys
 - All modal screens (Help, Info, Log) now scrollable
