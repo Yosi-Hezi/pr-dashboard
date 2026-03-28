@@ -218,31 +218,60 @@ def format_status_label(status: str, pr: dict | None = None) -> str:
     return f"{symbol} {label}"
 
 
-def pr_row_style(pr: dict, rules: list[dict] | None = None) -> Style | None:
-    """Return row background style based on configurable rules.
+def evaluate_pr_conditions(pr: dict) -> dict:
+    """Compute condition values from a PR for rule matching."""
+    status = pr.get("status", "")
+    _, label = _derive_status(status, pr)
+    reviews = pr.get("reviews", [])
+    required = [r for r in reviews if r.get("isRequired")]
+    comments_active = pr.get("commentsActive") or 0
+    comments_total = pr.get("commentsTotal") or 0
+    return {
+        "role": pr.get("role", "author"),
+        "status": label,
+        "isDraft": pr.get("isDraft", False),
+        "mergeStatus": pr.get("mergeStatus", ""),
+        "myVote": pr.get("myVote", "NoVote"),
+        "isRequiredReviewer": pr.get("isRequiredReviewer", False),
+        "hasActiveComments": comments_active > 0,
+        "allCommentsResolved": comments_active == 0 and comments_total > 0,
+        "allRequiredApproved": bool(required) and all(
+            r.get("vote") in ("Approved", "ApprovedWithSuggestions") for r in required
+        ),
+        "checksPass": (
+            pr.get("requiredPass") is not None
+            and pr.get("requiredPass") == pr.get("requiredTotal")
+        ),
+        "isPinned": bool(pr.get("pinned")),
+    }
 
-    Each rule: optional 'status' (derived label), optional 'mergeStatus', required 'color'.
-    Missing fields = wildcard. First matching rule wins.
+
+def pr_row_style(pr: dict, rules: list[dict] | None = None) -> Style | None:
+    """Return row style based on configurable signal rules.
+
+    Each rule: 'conditions' dict (all must match), plus style keys:
+    'color' (bgcolor), 'bold', 'italic', 'strikethrough'.
+    First matching rule wins.
     """
     if rules is None:
         from .config import DEFAULT_DISPLAY
+        rules = DEFAULT_DISPLAY["row_rules"]
 
-        rules = DEFAULT_DISPLAY["row_colors"]
-
-    status = pr.get("status", "")
-    _, label = _derive_status(status, pr)
-    merge_status = pr.get("mergeStatus", "")
+    pr_conds = evaluate_pr_conditions(pr)
 
     for rule in rules:
-        rule_status = rule.get("status", "")
-        rule_merge = rule.get("mergeStatus", "")
-        if rule_status and rule_status != label:
+        conditions = rule.get("conditions", {})
+        if not conditions:
             continue
-        if rule_merge and rule_merge != merge_status:
-            continue
-        color = rule.get("color", "")
-        if color:
-            return Style(bgcolor=color)
+        if all(pr_conds.get(k) == v for k, v in conditions.items()):
+            color = rule.get("color", "")
+            if color:
+                return Style(
+                    bgcolor=color,
+                    bold=True if rule.get("bold") else None,
+                    italic=True if rule.get("italic") else None,
+                    strike=True if rule.get("strikethrough") else None,
+                )
     return None
 
 

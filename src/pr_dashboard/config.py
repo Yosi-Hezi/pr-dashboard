@@ -320,10 +320,15 @@ DEFAULT_DISPLAY: dict = {
         "author": 14,
     },
     "truncation_suffix": "..",
-    "row_colors": [
-        {"status": "Approved", "color": "#2d4a2d"},
-        {"status": "Completed", "color": "#2d3a4a"},
-        {"status": "Abandoned", "color": "#4a2d2d"},
+    "row_rules": [
+        {"conditions": {"mergeStatus": "conflicts"}, "color": "#4a2d2d", "italic": True},
+        {"conditions": {"role": "author", "hasActiveComments": True}, "color": "#4a3d1a", "bold": True},
+        {"conditions": {"role": "reviewer", "myVote": "NoVote", "isRequiredReviewer": True}, "color": "#3d3a1a"},
+        {"conditions": {"role": "reviewer", "myVote": "WaitingForAuthor", "allCommentsResolved": True}, "color": "#2d3a4a", "italic": True},
+        {"conditions": {"status": "Approved"}, "color": "#2d4a2d"},
+        {"conditions": {"status": "Completed"}, "color": "#2d3a4a", "strikethrough": True},
+        {"conditions": {"status": "Abandoned"}, "color": "#4a2d2d", "strikethrough": True},
+        {"conditions": {"role": "reviewer", "myVote": "NoVote"}, "color": "#3a3a2a"},
     ],
     "footer_actions": list(DEFAULT_FOOTER_ACTIONS),
 }
@@ -368,18 +373,34 @@ def get_display_config() -> dict:
         suffix if isinstance(suffix, str) else DEFAULT_DISPLAY["truncation_suffix"]
     )
 
-    # Row colors — list of rules
-    user_colors = user_display.get("row_colors")
-    if user_colors is not None and isinstance(user_colors, list):
+    # Row rules — signal-based styling rules (replaces row_colors)
+    user_rules = user_display.get("row_rules")
+    # Also accept legacy "row_colors" key for backward compatibility
+    if user_rules is None:
+        user_rules = user_display.get("row_colors")
+    if user_rules is not None and isinstance(user_rules, list):
         valid_rules = []
-        for rule in user_colors:
-            if isinstance(rule, dict) and "color" in rule:
-                valid_rules.append(rule)
+        for rule in user_rules:
+            if isinstance(rule, dict) and ("color" in rule or "bold" in rule or "italic" in rule or "strikethrough" in rule):
+                # Normalize legacy format (status/mergeStatus at top level → conditions)
+                if "conditions" not in rule and ("status" in rule or "mergeStatus" in rule):
+                    conditions = {}
+                    if "status" in rule:
+                        conditions["status"] = rule["status"]
+                    if "mergeStatus" in rule:
+                        conditions["mergeStatus"] = rule["mergeStatus"]
+                    normalized = {"conditions": conditions}
+                    for k in ("color", "bold", "italic", "strikethrough"):
+                        if k in rule:
+                            normalized[k] = rule[k]
+                    valid_rules.append(normalized)
+                else:
+                    valid_rules.append(rule)
             else:
-                log.warning("config: invalid row_color rule: %s", rule)
-        result["row_colors"] = valid_rules
+                log.warning("config: invalid row_rules entry: %s", rule)
+        result["row_rules"] = valid_rules
     else:
-        result["row_colors"] = list(DEFAULT_DISPLAY["row_colors"])
+        result["row_rules"] = list(DEFAULT_DISPLAY["row_rules"])
 
     # Footer actions — ordered list of action names to show in footer
     user_footer = user_display.get("footer_actions")

@@ -341,7 +341,7 @@ class PRDashboard(App):
         visible = self.get_visible_prs()
         columns = self._get_columns()
         is_reviews = self._view_mode == "reviews"
-        row_colors = self._display_cfg.get("row_colors", [])
+        row_rules = self._display_cfg.get("row_rules", [])
         row_styles: dict[int, object] = {}
         for idx, pr in enumerate(visible):
             row_key = pr_key(pr)
@@ -350,7 +350,7 @@ class PRDashboard(App):
                 for c in columns
             ]
             table.add_row(*row_data, key=row_key)
-            style = pr_row_style(pr, rules=row_colors)
+            style = pr_row_style(pr, rules=row_rules)
             if style:
                 row_styles[idx] = style
         table.set_row_styles(row_styles)
@@ -538,6 +538,25 @@ class PRDashboard(App):
             for wp in wi_parts[1:]:
                 parts.append(f"            {wp}")
 
+        # Signal: show which row rule matched (if any)
+        from .formatting import evaluate_pr_conditions
+        pr_conds = evaluate_pr_conditions(pr)
+        signal_parts = []
+        if pr_conds.get("hasActiveComments"):
+            signal_parts.append("💬 Active comments")
+        if pr_conds.get("allCommentsResolved"):
+            signal_parts.append("✓ All comments resolved")
+        if pr_conds.get("allRequiredApproved"):
+            signal_parts.append("✓ All required approved")
+        if pr_conds.get("checksPass"):
+            signal_parts.append("✓ Checks pass")
+        if pr.get("mergeStatus") == "conflicts":
+            signal_parts.append("⚠ Merge conflicts")
+        if pr_conds.get("role") == "reviewer" and pr_conds.get("myVote") == "NoVote":
+            signal_parts.append("! Vote needed" if pr_conds.get("isRequiredReviewer") else "· Vote pending")
+        if signal_parts:
+            parts.append(f"[bold]Signals:[/] {' [dim]│[/] '.join(signal_parts)}")
+
         panel.update("\n".join(parts))
 
     # ── Filter ─────────────────────────────────────────────────────────────
@@ -680,7 +699,7 @@ class PRDashboard(App):
         self.push_screen(LogScreen())
 
     def action_toggle_help(self) -> None:
-        self.push_screen(HelpScreen(self._EFFECTIVE_KB, self._extensions))
+        self.push_screen(HelpScreen(self._EFFECTIVE_KB, self._extensions, row_rules=self._display_cfg.get("row_rules", [])))
 
     def action_show_info(self) -> None:
         accounts = {

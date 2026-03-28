@@ -2,6 +2,7 @@
 
 import re
 
+import pytest
 
 from pr_dashboard.data import (
     PrDataStore,
@@ -10,6 +11,19 @@ from pr_dashboard.data import (
     _repo_in_list,
     _remove_repo_from_list,
 )
+from pr_dashboard.db import Database
+
+
+@pytest.fixture()
+def store(tmp_path):
+    """Create a PrDataStore backed by a temporary SQLite database."""
+    return PrDataStore(db_path=tmp_path / "test.db")
+
+
+@pytest.fixture()
+def db(tmp_path):
+    """Create a bare Database for low-level tests."""
+    return Database(db_path=tmp_path / "test.db")
 
 
 # ── _pr_key ──────────────────────────────────────────────────────
@@ -103,97 +117,50 @@ class TestGhUrlRegex:
         assert GH_URL_RE.match("https://example.com/foo") is None
 
 
-# ── Upsert pin preservation ─────────────────────────────────────
+# ── Database: upsert pin preservation ────────────────────────────
 
 
 class TestUpsertPinPreservation:
-    def _make_data(self, prs=None):
-        return {
-            "version": 3,
-            "currentUser": "",
-            "sources": {"discovered": [], "include": [], "exclude": []},
-            "repos": {"discovered": [], "include": [], "exclude": []},
-            "prs": prs or [],
-        }
+    def test_pinned_state_preserved_on_upsert(self, db):
+        db.upsert_pr({"source": "ado/msazure", "id": 42, "title": "Old", "pinned": True})
+        db.upsert_pr({"source": "ado/msazure", "id": 42, "title": "New"})
+        pr = db.get_pr("ado/msazure", 42)
+        assert pr["title"] == "New"
+        assert pr["pinned"] is True
 
-    def test_pinned_state_preserved_on_upsert(self, tmp_path):
-        store = PrDataStore()
-        store.data_file = tmp_path / "prs.json"
+    def test_unpinned_pr_stays_unpinned(self, db):
+        db.upsert_pr({"source": "ado/msazure", "id": 42, "title": "Old", "pinned": False})
+        db.upsert_pr({"source": "ado/msazure", "id": 42, "title": "New"})
+        pr = db.get_pr("ado/msazure", 42)
+        assert pr["title"] == "New"
+        assert not pr.get("pinned")
 
-        data = self._make_data(
-            [{"source": "ado/msazure", "id": 42, "title": "Old", "pinned": True}]
-        )
-        new_entry = {"source": "ado/msazure", "id": 42, "title": "New"}
-        store._upsert_pr(data, new_entry)
-
-        assert data["prs"][0]["title"] == "New"
-        assert data["prs"][0]["pinned"] is True
-
-    def test_unpinned_pr_stays_unpinned(self, tmp_path):
-        store = PrDataStore()
-        store.data_file = tmp_path / "prs.json"
-
-        data = self._make_data(
-            [{"source": "ado/msazure", "id": 42, "title": "Old", "pinned": False}]
-        )
-        new_entry = {"source": "ado/msazure", "id": 42, "title": "New"}
-        store._upsert_pr(data, new_entry)
-
-        assert (
-            data["prs"][0].get("pinned") is None
-            or data["prs"][0].get("pinned") is False
-        )
-
-    def test_new_pr_has_no_pinned(self, tmp_path):
-        store = PrDataStore()
-        store.data_file = tmp_path / "prs.json"
-
-        data = self._make_data()
-        new_entry = {"source": "ado/msazure", "id": 42, "title": "New"}
-        store._upsert_pr(data, new_entry)
-
-        assert data["prs"][0].get("pinned") is None
+    def test_new_pr_has_no_pinned(self, db):
+        db.upsert_pr({"source": "ado/msazure", "id": 42, "title": "New"})
+        pr = db.get_pr("ado/msazure", 42)
+        assert not pr.get("pinned")
 
 
 # ── toggle_pin ───────────────────────────────────────────────────
 
 
 class TestTogglePin:
-    def _make_data(self, prs=None):
-        return {
-            "version": 3,
-            "currentUser": "",
-            "sources": {"discovered": [], "include": [], "exclude": []},
-            "repos": {"discovered": [], "include": [], "exclude": []},
-            "prs": prs or [],
-        }
-
-    def test_pin_and_unpin(self, tmp_path):
-        store = PrDataStore()
-        store.data_file = tmp_path / "prs.json"
-
-        data = self._make_data([{"source": "ado/msazure", "id": 42, "title": "Test"}])
-        store.save(data)
+    def test_pin_and_unpin(self, store):
+        store.db.upsert_pr({"source": "ado/msazure", "id": 42, "title": "Test"})
 
         result = store.toggle_pin(42, source="ado/msazure")
         assert result is True
 
-        loaded = store.load()
-        assert loaded["prs"][0]["pinned"] is True
+        prs = store.load_prs()
+        assert prs[0]["pinned"] is True
 
         result = store.toggle_pin(42, source="ado/msazure")
         assert result is False
 
-        loaded = store.load()
-        assert loaded["prs"][0]["pinned"] is False
+        prs = store.load_prs()
+        assert prs[0]["pinned"] is False
 
-    def test_toggle_nonexistent_pr(self, tmp_path):
-        store = PrDataStore()
-        store.data_file = tmp_path / "prs.json"
-
-        data = self._make_data()
-        store.save(data)
-
+    def test_toggle_nonexistent_pr(self, store):
         result = store.toggle_pin(999, source="ado/msazure")
         assert result is None
 
@@ -203,17 +170,13 @@ class TestTogglePin:
 
 class TestSourceManagement:
     def _make_store(self, tmp_path, sources=None):
-        store = PrDataStore()
-        store.data_file = tmp_path / "prs.json"
-        data = {
-            "version": 3,
-            "currentUser": "",
-            "sources": sources or {"discovered": [], "include": [], "exclude": []},
-            "repos": {"discovered": [], "include": [], "exclude": []},
-            "prs": [],
-        }
-        store.save(data)
-        return store
+        s = PrDataStore(db_path=tmp_path / "test.db")
+        if sources:
+            for lt in ("discovered", "include", "exclude"):
+                names = sources.get(lt, [])
+                if names:
+                    s.db.set_sources(lt, names)
+        return s
 
     def test_get_active_sources(self, tmp_path):
         store = self._make_store(
@@ -289,18 +252,16 @@ class TestSourceManagement:
 
 
 class TestRepoManagement:
-    def _make_store(self, tmp_path, repos=None):
-        store = PrDataStore()
-        store.data_file = tmp_path / "prs.json"
-        data = {
-            "version": 3,
-            "currentUser": "",
-            "sources": {"discovered": [], "include": [], "exclude": []},
-            "repos": repos or {"discovered": [], "include": [], "exclude": []},
-            "prs": [],
-        }
-        store.save(data)
-        return store
+    def _make_store(self, tmp_path, repos=None, prs=None):
+        s = PrDataStore(db_path=tmp_path / "test.db")
+        if repos:
+            for lt in ("discovered", "include", "exclude"):
+                repo_list = repos.get(lt, [])
+                if repo_list:
+                    s.db.set_repos(lt, repo_list)
+        if prs:
+            s.db.upsert_prs_batch(prs)
+        return s
 
     def test_include_repo(self, tmp_path):
         store = self._make_store(tmp_path)
@@ -368,73 +329,118 @@ class TestRepoManagement:
         assert len(items) == 1
         assert items[0][1] is False  # excluded, not deleted
         # Verify include list was cleaned
-        data = store.load()
-        assert data["repos"]["include"] == []
+        include_repos = store.db.get_repos("include")
+        assert include_repos == []
 
     def test_exclude_repo_removes_reviewer_prs(self, tmp_path):
-        store = PrDataStore()
-        store.data_file = tmp_path / "prs.json"
-        data = {
-            "version": 3,
-            "currentUser": "",
-            "sources": {"discovered": [], "include": [], "exclude": []},
-            "repos": {
+        store = self._make_store(
+            tmp_path,
+            repos={
                 "discovered": [{"source": "ado/msazure", "repo": "Noisy"}],
                 "include": [],
                 "exclude": [],
             },
-            "prs": [
-                {
-                    "source": "ado/msazure",
-                    "id": 1,
-                    "role": "reviewer",
-                    "repoName": "Noisy",
-                },
-                {
-                    "source": "ado/msazure",
-                    "id": 2,
-                    "role": "author",
-                    "repoName": "Noisy",
-                },
-                {
-                    "source": "ado/msazure",
-                    "id": 3,
-                    "role": "reviewer",
-                    "repoName": "Other",
-                },
+            prs=[
+                {"source": "ado/msazure", "id": 1, "role": "reviewer", "repoName": "Noisy"},
+                {"source": "ado/msazure", "id": 2, "role": "author", "repoName": "Noisy"},
+                {"source": "ado/msazure", "id": 3, "role": "reviewer", "repoName": "Other"},
             ],
-        }
-        store.save(data)
+        )
         store.toggle_repo("ado/msazure", "Noisy")
         prs = store.load_prs()
         assert len(prs) == 2  # reviewer PR from Noisy removed, author kept
         assert {p["id"] for p in prs} == {2, 3}
 
 
-# ── Version check ────────────────────────────────────────────────
+# ── Database: migration from legacy JSON ─────────────────────────
 
 
-class TestVersionCheck:
-    def test_old_version_returns_empty(self, tmp_path):
-        store = PrDataStore()
-        store.data_file = tmp_path / "prs.json"
-        old_data = {"version": 2, "sources": ["ado/msazure"], "prs": [{"id": 1}]}
-        store.data_file.write_text(__import__("json").dumps(old_data), encoding="utf-8")
-        loaded = store.load()
-        assert loaded["version"] == 3
-        assert loaded["prs"] == []
+class TestLegacyMigration:
+    def test_migrate_from_json(self, tmp_path):
+        import json
 
-    def test_v3_loads_correctly(self, tmp_path):
-        store = PrDataStore()
-        store.data_file = tmp_path / "prs.json"
-        v3_data = {
+        json_file = tmp_path / "prs.json"
+        json_data = {
             "version": 3,
-            "currentUser": "test",
-            "sources": {"discovered": ["ado/msazure"], "include": [], "exclude": []},
-            "repos": {"discovered": [], "include": [], "exclude": []},
-            "prs": [{"id": 1, "source": "ado/msazure"}],
+            "currentUser": "test@example.com",
+            "sources": {
+                "discovered": ["ado/msazure"],
+                "include": ["ado/custom"],
+                "exclude": ["ado/contoso"],
+            },
+            "repos": {
+                "discovered": [{"source": "ado/msazure", "repo": "Repo1"}],
+                "include": [],
+                "exclude": [{"source": "ado/msazure", "repo": "Noisy"}],
+            },
+            "prs": [
+                {"source": "ado/msazure", "id": 42, "title": "Test PR", "status": "active"},
+            ],
         }
-        store.data_file.write_text(__import__("json").dumps(v3_data), encoding="utf-8")
-        loaded = store.load()
-        assert loaded["version"] == 3
-        assert len(loaded["prs"]) == 1
+        json_file.write_text(json.dumps(json_data), encoding="utf-8")
+
+        db = Database.from_legacy_json(json_file, tmp_path / "test.db")
+
+        assert db.get_meta("currentUser") == "test@example.com"
+        assert db.get_sources("discovered") == ["ado/msazure"]
+        assert db.get_sources("include") == ["ado/custom"]
+        assert db.get_sources("exclude") == ["ado/contoso"]
+        assert len(db.get_repos("discovered")) == 1
+        assert len(db.get_repos("exclude")) == 1
+        prs = db.load_prs()
+        assert len(prs) == 1
+        assert prs[0]["title"] == "Test PR"
+        # JSON file should be renamed
+        assert not json_file.exists()
+        assert (tmp_path / "prs.json.bak").exists()
+
+    def test_skip_wrong_version(self, tmp_path):
+        import json
+
+        json_file = tmp_path / "prs.json"
+        json_file.write_text(json.dumps({"version": 2, "prs": [{"id": 1}]}))
+        db = Database.from_legacy_json(json_file, tmp_path / "test.db")
+        assert db.load_prs() == []
+
+
+# ── Database: clean, remove ──────────────────────────────────────
+
+
+class TestDatabaseOps:
+    def test_clean_non_active(self, db):
+        db.upsert_pr({"source": "ado/msazure", "id": 1, "status": "active"})
+        db.upsert_pr({"source": "ado/msazure", "id": 2, "status": "completed"})
+        db.upsert_pr({"source": "ado/msazure", "id": 3, "status": "abandoned"})
+        removed = db.clean_non_active()
+        assert removed == 2
+        prs = db.load_prs()
+        assert len(prs) == 1
+        assert prs[0]["id"] == 1
+
+    def test_remove_pr_by_source(self, db):
+        db.upsert_pr({"source": "ado/msazure", "id": 42})
+        assert db.remove_pr(42, "ado/msazure") is True
+        assert db.load_prs() == []
+
+    def test_remove_pr_not_found(self, db):
+        assert db.remove_pr(999) is False
+
+    def test_batch_upsert(self, db):
+        prs = [
+            {"source": "ado/msazure", "id": i, "title": f"PR {i}"}
+            for i in range(10)
+        ]
+        db.upsert_prs_batch(prs)
+        assert db.pr_count() == 10
+
+    def test_batch_upsert_preserves_pins(self, db):
+        db.upsert_pr({"source": "ado/msazure", "id": 1, "title": "Old", "pinned": True})
+        db.upsert_prs_batch([
+            {"source": "ado/msazure", "id": 1, "title": "New"},
+            {"source": "ado/msazure", "id": 2, "title": "Brand new"},
+        ])
+        pr1 = db.get_pr("ado/msazure", 1)
+        assert pr1["title"] == "New"
+        assert pr1["pinned"] is True
+        pr2 = db.get_pr("ado/msazure", 2)
+        assert not pr2.get("pinned")

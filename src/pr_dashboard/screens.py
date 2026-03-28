@@ -72,7 +72,7 @@ class HelpScreen(ModalScreen):
         align: center middle;
     }
     #help-dialog {
-        width: 64;
+        width: 90;
         height: auto;
         max-height: 80%;
         border: thick $accent;
@@ -93,10 +93,12 @@ class HelpScreen(ModalScreen):
         self,
         keybindings: dict[str, str] | None = None,
         extensions: list[dict] | None = None,
+        row_rules: list[dict] | None = None,
     ) -> None:
         super().__init__()
         self._keybindings = keybindings or DEFAULT_KEYBINDINGS
         self._extensions = extensions or []
+        self._row_rules = row_rules or []
 
     def compose(self) -> ComposeResult:
         # Build keybinding lines from effective config
@@ -109,28 +111,56 @@ class HelpScreen(ModalScreen):
         # Always add escape (not configurable)
         lines.append(f"[b]{'Esc':<14}[/]Clear filter / close modal")
 
-        # Extension keybindings (rendered separately from built-ins)
+        # Extension keybindings
         if self._extensions:
             lines.append("")
-            lines.append("  ─── Extensions ───")
+            lines.append("[b]  ─── Extensions ───[/]")
             for ext in self._extensions:
                 display = _key_display(ext["key"])
                 lines.append(f"[b]{display:<14}[/]{ext['name']}")
 
         kb_text = "\n".join(lines)
 
+        # Symbols legend
+        legend = (
+            "\n[b]  ─── Symbols ───[/]\n"
+            "[dim]Status:     ○ Active   ↻ Waiting   ✓ Approved   ✎ Draft   » Auto-complete   ✓✓ Done   ∅ Abandoned   ⚠ Conflicts[/]\n"
+            "[dim]Votes:      ✓ Approved   ↻ Changes requested   ✗ Rejected   ! Required pending[/]\n"
+            "[dim]Checks:     ✓ Pass   ✗ Required fail   ~ Optional fail[/]\n"
+            "[dim]Comments:   ✓ All resolved   💬 Unresolved threads[/]\n"
+            "[dim]Me:         Your vote (Reviews view only)[/]\n"
+            "[dim]Pin:        ★ Pinned[/]"
+        )
+
+        # Row rules legend
+        rule_legend = ""
+        if self._row_rules:
+            rule_lines = ["\n[b]  ─── Row Highlighting Rules ───[/]"]
+            rule_lines.append("[dim]First matching rule wins. Configure in config.json → display.row_rules[/]")
+            for i, rule in enumerate(self._row_rules, 1):
+                conds = rule.get("conditions", {})
+                style_parts = []
+                if rule.get("color"):
+                    style_parts.append(f"bg:{rule['color']}")
+                if rule.get("bold"):
+                    style_parts.append("bold")
+                if rule.get("italic"):
+                    style_parts.append("italic")
+                if rule.get("strikethrough"):
+                    style_parts.append("strikethrough")
+                cond_str = ", ".join(f"{k}={v}" for k, v in conds.items())
+                style_str = " + ".join(style_parts) if style_parts else "default"
+                rule_lines.append(f"  [dim]{i:>2}.[/] {cond_str:<58} → {style_str}")
+            rule_legend = "\n".join(rule_lines)
+
         with Vertical(id="help-dialog"):
-            yield Label("Keyboard Shortcuts", id="help-title")
+            yield Label("PR Dashboard — Help", id="help-title")
             with VerticalScroll(id="help-scroll"):
                 yield Static(
-                    f"{kb_text}\n\n"
-                    "[dim]Status:   ○ Active   ↻ Waiting   ✓ Approved   ✎ Draft   » Auto-complete   ✓✓ Done   ∅ Abandoned   ⚠ Conflicts[/]\n"
-                    "[dim]Votes:    ✓ Approved   ↻ Changes requested   ✗ Rejected   ! Required pending[/]\n"
-                    "[dim]Checks:   ✓ Pass   ✗ Required fail   ~ Optional fail[/]\n"
-                    "[dim]Comments: ✓ All resolved   💬 Unresolved threads[/]\n"
-                    "[dim]Me:       Your vote (Reviews view only)[/]\n"
-                    "[dim]Pin:      ★ Pinned (sorted to top)[/]\n\n"
-                    f"[dim]Logs: {LOG_DIR}[/]"
+                    f"{kb_text}"
+                    f"{legend}"
+                    f"{rule_legend}"
+                    f"\n\n[dim]Logs: {LOG_DIR}[/]"
                 )
 
 

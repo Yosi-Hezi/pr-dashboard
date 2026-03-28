@@ -123,11 +123,13 @@ Every PR is enriched with data from the source API:
 
 ### Data Persistence
 
-- Stored in `platformdirs.user_data_dir("pr-dashboard")/prs.json`
-- Schema versioned (v3) with structured source/repo management
+- Stored in `platformdirs.user_data_dir("pr-dashboard")/dashboard.db` (SQLite)
+- Hybrid schema: indexed key columns + JSON blob for full PR data
+- WAL mode for concurrent access, NORMAL synchronous for performance
 - Sources and repos use `{discovered, include, exclude}` sublists
 - Repos are qualified with source: `{"source": "ado/msazure", "repo": "MyRepo"}`
 - Composite key `(source, id)` prevents cross-source duplication
+- Auto-migrates from legacy `prs.json` (renamed to `.json.bak`)
 - Async locking for concurrent operations
 
 ### Error Handling
@@ -185,7 +187,7 @@ uv run pr-dashboard list --mine
 - Comment threads numbered with 💬 emoji headers
 
 ### Configurable Keybindings & Theme
-- Config file: `config.json` in data directory (next to `prs.json`)
+- Config file: `config.json` in data directory (next to `dashboard.db`)
 - Override any keybinding with `"keybindings": {"action": "key"}` format
 - Configurable theme: `"theme": "dracula"` (supports all Textual themes)
 - Supports single chars, ctrl+char, alt+char, shift+char, special keys
@@ -276,3 +278,29 @@ uv run pr-dashboard list --mine
 - Fixed excluded repos wiped by sync — stale-cleanup now only removes excludes whose source is gone
 - Fixed key validation regex to accept uppercase letters for user-configured hotkeys
 - All modal screens (Help, Info, Log) now scrollable
+
+---
+
+## Phase 6 Changelog
+
+### SQLite Migration
+- Data storage moved from `prs.json` to `dashboard.db` (SQLite with WAL mode)
+- Hybrid schema: indexed key columns (`source`, `id`, `role`, `status`, `repo_name`, `is_draft`, `is_mine`, `pinned`) plus JSON blob for full PR data
+- Single-row operations (toggle pin, remove, clean) are now O(1) instead of full-file rewrite
+- Auto-migration: existing `prs.json` files are imported on first run and renamed to `.json.bak`
+- Migration includes verification step — original file only renamed after data is confirmed in SQLite
+
+### Configurable Row Rules
+- New `row_rules` config replaces `row_colors` for signal-based row styling
+- Each rule has `conditions` (all must match) and style properties (`color`, `bold`, `italic`, `strikethrough`)
+- First matching rule wins
+- 11 computed conditions available: `role`, `status`, `isDraft`, `mergeStatus`, `myVote`, `isRequiredReviewer`, `hasActiveComments`, `allCommentsResolved`, `allRequiredApproved`, `checksPass`, `isPinned`
+- 8 default rules ship out of the box (conflicts → red italic, author with comments → amber bold, etc.)
+- Legacy `row_colors` config auto-converted to new format for backward compatibility
+- Help screen (`?`) now shows active rules legend with condition/style details
+- Signal summary line added to detail panel
+
+### Code Cleanup
+- Removed legacy fallback in `refresh()` that tried default ADO org for sourceless PRs
+- Removed 3 unused variable assignments (ruff F841: `ado_client.py`, `test_config.py`)
+- Help screen widened to 90 columns with better section separation

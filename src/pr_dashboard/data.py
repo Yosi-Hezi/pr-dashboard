@@ -1,32 +1,24 @@
-"""PR data store — manages prs.json with platformdirs."""
+"""PR data store — manages persistent PR data backed by SQLite.
+
+Migrated from JSON to SQLite for faster targeted reads/writes.
+Auto-migrates from legacy prs.json on first use.
+"""
 
 from __future__ import annotations
 
 import asyncio
-import json
+import re
 from pathlib import Path
 
 from .ado_client import AdoApiError, AdoAuthError, AdoClient
+from .db import Database, get_database
 from .gh_client import GhApiError, GhClient
 from .logger import get_logger
-from platformdirs import user_data_dir
 
 log = get_logger()
 
-DATA_DIR = Path(user_data_dir("pr-dashboard", ensure_exists=True))
-DATA_FILE = DATA_DIR / "prs.json"
 
-DATA_VERSION = 3
-
-
-def _empty_data() -> dict:
-    return {
-        "version": DATA_VERSION,
-        "currentUser": "",
-        "sources": {"discovered": [], "include": [], "exclude": []},
-        "repos": {"discovered": [], "include": [], "exclude": []},
-        "prs": [],
-    }
+# ── Backward-compatible helpers (used by tests) ──────────────────────────
 
 
 def _repo_entry(source: str, repo: str) -> dict:
@@ -53,169 +45,83 @@ def _pr_key(pr: dict) -> tuple[str, int]:
 
 
 class PrDataStore:
-    """Manages persistent PR data backed by prs.json."""
+    """Manages persistent PR data backed by SQLite."""
 
-    def __init__(self) -> None:
-        self.data_file = DATA_FILE
+    def __init__(self, db_path: Path | None = None) -> None:
+        self._db: Database = get_database(db_path)
         self._lock = asyncio.Lock()
 
-    def load(self) -> dict:
-        """Load data from disk. Returns empty structure if file missing/incompatible."""
-        if not self.data_file.exists():
-            return _empty_data()
-        try:
-            data = json.loads(self.data_file.read_text(encoding="utf-8"))
-            if data.get("version") != DATA_VERSION:
-                return _empty_data()
-            return data
-        except (json.JSONDecodeError, OSError) as exc:
-            log.error("Failed to read %s: %s", self.data_file, exc)
-            return _empty_data()
+    @property
+    def db(self) -> Database:
+        return self._db
+
+    # ── Read ──────────────────────────────────────────────────────────────
 
     def load_prs(self) -> list[dict]:
-        """Load just the PR list."""
-        return self.load().get("prs", [])
+        """Load all PRs."""
+        return self._db.load_prs()
 
-    def save(self, data: dict) -> None:
-        """Write data to disk atomically (write tmp → rename)."""
-        self.data_file.parent.mkdir(parents=True, exist_ok=True)
-        import tempfile
-
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w",
-            dir=self.data_file.parent,
-            suffix=".tmp",
-            delete=False,
-            encoding="utf-8",
-        )
-        try:
-            tmp.write(json.dumps(data, indent=2, ensure_ascii=False))
-            tmp.close()
-            Path(tmp.name).replace(self.data_file)
-        except BaseException:
-            Path(tmp.name).unlink(missing_ok=True)
-            raise
-        log.debug("Saved %d PRs to %s", len(data.get("prs", [])), self.data_file)
-
-    def _upsert_pr(self, data: dict, entry: dict) -> bool:
-        """Insert or update a PR entry using composite (source, id) key.
-
-        Preserves user-local fields (pinned) across API refreshes.
-        Returns True if the PR already existed (update), False if new (insert).
-        """
-        key = _pr_key(entry)
-        idx = next((i for i, p in enumerate(data["prs"]) if _pr_key(p) == key), None)
-        if idx is not None:
-            # Carry over user-local fields not present in API response
-            if data["prs"][idx].get("pinned"):
-                entry.setdefault("pinned", data["prs"][idx]["pinned"])
-            data["prs"][idx] = entry
-            return True
-        else:
-            data["prs"].append(entry)
-            return False
+    # ── Pin ───────────────────────────────────────────────────────────────
 
     def toggle_pin(self, pr_id: int, source: str = "") -> bool | None:
         """Toggle pinned state for a PR. Returns new pinned state, or None if not found."""
-        data = self.load()
-        key = (source, pr_id)
-        for pr in data["prs"]:
-            if _pr_key(pr) == key:
-                new_state = not pr.get("pinned", False)
-                pr["pinned"] = new_state
-                self.save(data)
-                log.info("PR #%d pinned=%s", pr_id, new_state)
-                return new_state
-        return None
+        return self._db.toggle_pin(source, pr_id)
 
     # ── Source management ─────────────────────────────────────────────────
 
     def get_active_sources(self) -> list[str]:
         """Return sources that should be synced: (discovered ∪ include) - exclude."""
-        data = self.load()
-        src = data.get("sources", {})
-        active = set(src.get("discovered", [])) | set(src.get("include", []))
-        return sorted(active - set(src.get("exclude", [])))
+        discovered = set(self._db.get_sources("discovered"))
+        include = set(self._db.get_sources("include"))
+        exclude = set(self._db.get_sources("exclude"))
+        return sorted((discovered | include) - exclude)
 
     def get_sources_for_manage(self) -> list[tuple[str, bool]]:
-        """Return all known sources with active status for TUI.
-
-        Returns list of (source_str, is_active) sorted alphabetically.
-        """
-        data = self.load()
-        src = data.get("sources", {})
-        all_sources = (
-            set(src.get("discovered", []))
-            | set(src.get("include", []))
-            | set(src.get("exclude", []))
-        )
-        exclude_set = set(src.get("exclude", []))
-        return [(s, s not in exclude_set) for s in sorted(all_sources)]
+        """Return all known sources with active status for TUI."""
+        all_pairs = self._db.get_all_sources()
+        all_names: set[str] = set()
+        exclude_set: set[str] = set()
+        for name, list_type in all_pairs:
+            all_names.add(name)
+            if list_type == "exclude":
+                exclude_set.add(name)
+        return [(s, s not in exclude_set) for s in sorted(all_names)]
 
     def include_source(self, source: str) -> bool:
         """Add a source to the include list. Returns True if newly added."""
-        data = self.load()
-        src = data.setdefault(
-            "sources", {"discovered": [], "include": [], "exclude": []}
-        )
-        include = src.setdefault("include", [])
-        if source in include:
+        added = self._db.add_source(source, "include")
+        if not added:
             return False
-        include.append(source)
-        # Also remove from exclude if present
-        exclude = src.setdefault("exclude", [])
-        if source in exclude:
-            exclude.remove(source)
-        self.save(data)
+        self._db.remove_source(source, "exclude")
         log.info("Included source: %s", source)
         return True
 
     def exclude_source(self, source: str) -> bool:
         """Add a source to the exclude list. Idempotent. Returns True if newly excluded."""
-        data = self.load()
-        src = data.setdefault(
-            "sources", {"discovered": [], "include": [], "exclude": []}
-        )
-        exclude = src.setdefault("exclude", [])
-        if source in exclude:
+        added = self._db.add_source(source, "exclude")
+        if not added:
             return False
-        exclude.append(source)
-        self.save(data)
         log.info("Excluded source: %s", source)
         return True
 
     def toggle_source(self, source: str) -> str | None:
-        """Toggle source active/excluded. Returns new state or None if deleted.
-
-        - Active & in discovered (or both): add to exclude → 'excluded'
-        - Active & ONLY in include: delete from include → None
-        - Excluded: remove from exclude → 'active'
-        """
-        data = self.load()
-        src = data.setdefault(
-            "sources", {"discovered": [], "include": [], "exclude": []}
-        )
-        discovered = src.setdefault("discovered", [])
-        include = src.setdefault("include", [])
-        exclude = src.setdefault("exclude", [])
+        """Toggle source active/excluded. Returns new state or None if deleted."""
+        discovered = self._db.get_sources("discovered")
+        include = self._db.get_sources("include")
+        exclude = self._db.get_sources("exclude")
 
         if source in exclude:
-            exclude.remove(source)
-            self.save(data)
+            self._db.remove_source(source, "exclude")
             log.info("Activated source: %s", source)
             return "active"
         else:
             if source in discovered:
-                exclude.append(source)
-                # Clean from include if also present
-                if source in include:
-                    include.remove(source)
-                self.save(data)
+                self._db.add_source(source, "exclude")
+                self._db.remove_source(source, "include")
                 log.info("Excluded source: %s", source)
                 return "excluded"
             elif source in include:
-                include.remove(source)
-                self.save(data)
+                self._db.remove_source(source, "include")
                 log.info("Removed included source: %s", source)
                 return None
             return None
@@ -223,107 +129,54 @@ class PrDataStore:
     # ── Repo management ──────────────────────────────────────────────────
 
     def get_repos_for_manage(self) -> list[tuple[dict, bool]]:
-        """Return all known repos with active status for TUI.
-
-        Returns list of ({"source": str, "repo": str}, is_active) sorted.
-        """
-        data = self.load()
-        rp = data.get("repos", {})
-
+        """Return all known repos with active status for TUI."""
+        all_triples = self._db.get_all_repos()
         seen: set[tuple[str, str]] = set()
         all_repos: list[dict] = []
-        for lst in [
-            rp.get("discovered", []),
-            rp.get("include", []),
-            rp.get("exclude", []),
-        ]:
-            for r in lst:
-                k = (r.get("source", ""), r.get("repo", ""))
-                if k not in seen and k[1]:
-                    seen.add(k)
-                    all_repos.append({"source": k[0], "repo": k[1]})
-        all_repos.sort(key=lambda r: (r["source"], r["repo"]))
+        exclude_keys: set[tuple[str, str]] = set()
 
-        exclude_keys = {
-            (r.get("source", ""), r.get("repo", "")) for r in rp.get("exclude", [])
-        }
+        for source, repo, list_type in all_triples:
+            k = (source, repo)
+            if list_type == "exclude":
+                exclude_keys.add(k)
+            if k not in seen and repo:
+                seen.add(k)
+                all_repos.append({"source": source, "repo": repo})
+
+        all_repos.sort(key=lambda r: (r["source"], r["repo"]))
         return [(r, (r["source"], r["repo"]) not in exclude_keys) for r in all_repos]
 
     def include_repo(self, source: str, repo: str) -> bool:
         """Add a repo to repos.include. Returns True if newly added."""
-        data = self.load()
-        rp = data.setdefault("repos", {"discovered": [], "include": [], "exclude": []})
-        include = rp.setdefault("include", [])
-        if _repo_in_list(source, repo, include):
+        added = self._db.add_repo(source, repo, "include")
+        if not added:
             return False
-        include.append(_repo_entry(source, repo))
-        _remove_repo_from_list(source, repo, rp.setdefault("exclude", []))
-        self.save(data)
+        self._db.remove_repo(source, repo, "exclude")
         log.info("Included repo: %s :: %s", source, repo)
         return True
 
     def exclude_repo(self, source: str, repo: str) -> bool:
-        """Add a repo to repos.exclude. Idempotent. Returns True if newly excluded."""
-        data = self.load()
-        rp = data.setdefault("repos", {"discovered": [], "include": [], "exclude": []})
-        exclude = rp.setdefault("exclude", [])
-        if _repo_in_list(source, repo, exclude):
+        """Add a repo to repos.exclude. Returns True if newly excluded."""
+        added = self._db.add_repo(source, repo, "exclude")
+        if not added:
             return False
-        exclude.append(_repo_entry(source, repo))
-        # Remove reviewer PRs from this repo
-        before = len(data["prs"])
-        data["prs"] = [
-            p
-            for p in data["prs"]
-            if not (
-                p.get("role") == "reviewer"
-                and p.get("source") == source
-                and p.get("repoName") == repo
-            )
-        ]
-        removed = before - len(data["prs"])
-        self.save(data)
+        removed = self._db.remove_reviewer_prs_for_repo(source, repo)
         log.info(
             "Excluded repo %s :: %s (removed %d review PRs)", source, repo, removed
         )
         return True
 
     def toggle_repo(self, source: str, repo: str) -> str | None:
-        """Toggle repo active/excluded. Returns new state or None if deleted.
-
-        - Active & in discovered (or both): add to exclude → 'excluded'
-        - Active & ONLY in include: delete from include → None
-        - Excluded: remove from exclude → 'active'
-        """
-        data = self.load()
-        rp = data.setdefault("repos", {"discovered": [], "include": [], "exclude": []})
-        discovered = rp.setdefault("discovered", [])
-        include = rp.setdefault("include", [])
-        exclude = rp.setdefault("exclude", [])
-
-        if _repo_in_list(source, repo, exclude):
-            _remove_repo_from_list(source, repo, exclude)
-            self.save(data)
+        """Toggle repo active/excluded. Returns new state or None if deleted."""
+        if self._db.repo_in_list(source, repo, "exclude"):
+            self._db.remove_repo(source, repo, "exclude")
             log.info("Activated repo: %s :: %s", source, repo)
             return "active"
         else:
-            if _repo_in_list(source, repo, discovered):
-                exclude.append(_repo_entry(source, repo))
-                # Clean from include if also present
-                _remove_repo_from_list(source, repo, include)
-                # Remove reviewer PRs from this repo
-                before = len(data["prs"])
-                data["prs"] = [
-                    p
-                    for p in data["prs"]
-                    if not (
-                        p.get("role") == "reviewer"
-                        and p.get("source") == source
-                        and p.get("repoName") == repo
-                    )
-                ]
-                removed = before - len(data["prs"])
-                self.save(data)
+            if self._db.repo_in_list(source, repo, "discovered"):
+                self._db.add_repo(source, repo, "exclude")
+                self._db.remove_repo(source, repo, "include")
+                removed = self._db.remove_reviewer_prs_for_repo(source, repo)
                 log.info(
                     "Excluded repo %s :: %s (removed %d review PRs)",
                     source,
@@ -331,9 +184,8 @@ class PrDataStore:
                     removed,
                 )
                 return "excluded"
-            elif _repo_in_list(source, repo, include):
-                _remove_repo_from_list(source, repo, include)
-                self.save(data)
+            elif self._db.repo_in_list(source, repo, "include"):
+                self._db.remove_repo(source, repo, "include")
                 log.info("Removed included repo: %s :: %s", source, repo)
                 return None
             return None
@@ -366,13 +218,11 @@ class PrDataStore:
                 try:
                     _, user_email = await client.get_current_user()
 
-                    # Fetch authored + reviewer PRs in parallel
                     authored_raw, review_raw = await asyncio.gather(
                         client.list_my_prs(status="active"),
                         client.list_my_review_prs(status="active"),
                     )
 
-                    # Dedup: if PR appears in both, keep as author
                     authored_ids = {pr["pullRequestId"] for pr in authored_raw}
                     review_only = [
                         pr
@@ -386,7 +236,6 @@ class PrDataStore:
                         not in excluded_repo_keys
                     ]
 
-                    # If only fetching for included repos, filter both
                     if included_repos_only is not None:
                         authored_raw = [
                             pr
@@ -429,17 +278,13 @@ class PrDataStore:
 
             elif source == "github":
                 gh = gh_client or GhClient()
-
-                # Prefetch username to avoid N redundant auth calls
                 await gh.get_username()
 
-                # Fetch authored + reviewer PRs in parallel
                 authored_prs, review_prs = await asyncio.gather(
                     gh.list_my_prs(),
                     gh.list_my_review_prs(),
                 )
 
-                # Dedup: if PR appears in both, keep as author
                 authored_keys = {
                     (
                         p.get("repository", {}).get("nameWithOwner", ""),
@@ -463,7 +308,6 @@ class PrDataStore:
                     not in excluded_repo_keys
                 ]
 
-                # If only fetching for included repos
                 if included_repos_only is not None:
                     authored_prs = [
                         p
@@ -514,25 +358,11 @@ class PrDataStore:
         ado_clients: dict[str, AdoClient] | None = None,
         gh_client: GhClient | None = None,
     ) -> list[dict]:
-        """Fetch PRs from active sources and save. Returns PR list.
-
-        Two-step process:
-        1. Discover sources → update sources.discovered
-        2. Fetch PRs from active sources + included repos → update repos.discovered
-        """
+        """Fetch PRs from active sources and save. Returns PR list."""
         async with self._lock:
-            data = self.load()
-            sources = data.setdefault(
-                "sources", {"discovered": [], "include": [], "exclude": []}
-            )
-            repos = data.setdefault(
-                "repos", {"discovered": [], "include": [], "exclude": []}
-            )
-
             # ── Phase 1: Discover sources ──────────────────────────────
             discovered_sources: list[str] = []
 
-            # ADO: discover orgs
             discovery_client = None
             try:
                 discovery_client = AdoClient()
@@ -544,7 +374,6 @@ class PrDataStore:
                 if discovery_client:
                     await discovery_client.close()
 
-            # GitHub
             gh_disc = gh_client or GhClient()
             gh_disc_is_local = gh_client is None
             try:
@@ -557,7 +386,7 @@ class PrDataStore:
                 if gh_disc_is_local:
                     await gh_disc.close()
 
-            sources["discovered"] = discovered_sources
+            self._db.set_sources("discovered", discovered_sources)
             log.info(
                 "Discovered %d sources: %s",
                 len(discovered_sources),
@@ -565,20 +394,21 @@ class PrDataStore:
             )
 
             # ── Phase 2: Determine what to fetch ──────────────────────
-            active_set = (
-                set(sources.get("discovered", [])) | set(sources.get("include", []))
-            ) - set(sources.get("exclude", []))
+            include_sources = set(self._db.get_sources("include"))
+            exclude_sources = set(self._db.get_sources("exclude"))
+            active_set = (set(discovered_sources) | include_sources) - exclude_sources
 
-            # Sources with included repos that aren't in the active set
+            include_repos = self._db.get_repos("include")
+            exclude_repos = self._db.get_repos("exclude")
+
             included_repo_by_source: dict[str, set[str]] = {}
-            for r in repos.get("include", []):
+            for r in include_repos:
                 rs = r.get("source", "")
                 if rs and rs not in active_set:
                     included_repo_by_source.setdefault(rs, set()).add(r.get("repo", ""))
 
             excluded_repo_keys = {
-                (r.get("source", ""), r.get("repo", ""))
-                for r in repos.get("exclude", [])
+                (r.get("source", ""), r.get("repo", "")) for r in exclude_repos
             }
 
             all_sources_to_fetch = sorted(
@@ -587,15 +417,12 @@ class PrDataStore:
 
             if not all_sources_to_fetch:
                 log.warning("No active sources — nothing to sync")
-                self.save(data)
-                return data.get("prs", [])
+                return self._db.load_prs()
 
             # ── Phase 3: Fetch PRs from each source ───────────────────
             all_entries: list[dict] = []
             all_repo_discoveries: list[dict] = []
 
-            # Get one ADO token upfront and share across all org clients
-            # so we don't spawn N concurrent `az` subprocesses.
             ado_token: str | None = None
             ado_orgs = {
                 s.removeprefix("ado/")
@@ -653,7 +480,7 @@ class PrDataStore:
                     all_entries.extend(entries)
                     all_repo_discoveries.extend(repo_disc)
                     if user_email:
-                        data["currentUser"] = user_email
+                        self._db.set_meta("currentUser", user_email)
 
             # ── Phase 4: Update repos.discovered (dedup) ──────────────
             seen_repos: set[tuple[str, str]] = set()
@@ -663,44 +490,32 @@ class PrDataStore:
                 if k not in seen_repos:
                     seen_repos.add(k)
                     unique_repos.append(r)
-            repos["discovered"] = unique_repos
+            self._db.set_repos("discovered", unique_repos)
 
             # ── Phase 5: Clean up stale excludes ──────────────────────
-            # Only remove excluded repos/sources whose SOURCE no longer
-            # exists.  Individual repos may vanish between syncs (no PRs
-            # in them right now) but the user's exclude intent must stick.
-            all_known_srcs = set(sources["discovered"]) | set(
-                sources.get("include", [])
-            )
-            repos["exclude"] = [
-                r
-                for r in repos.get("exclude", [])
+            all_known_srcs = set(discovered_sources) | include_sources
+            current_exclude_repos = self._db.get_repos("exclude")
+            valid_exclude_repos = [
+                r for r in current_exclude_repos
                 if r.get("source", "") in all_known_srcs
             ]
-            sources["exclude"] = [
-                s for s in sources.get("exclude", []) if s in all_known_srcs
+            if len(valid_exclude_repos) < len(current_exclude_repos):
+                self._db.set_repos("exclude", valid_exclude_repos)
+
+            current_exclude_sources = self._db.get_sources("exclude")
+            valid_exclude_sources = [
+                s for s in current_exclude_sources if s in all_known_srcs
             ]
+            if len(valid_exclude_sources) < len(current_exclude_sources):
+                self._db.set_sources("exclude", valid_exclude_sources)
 
             # ── Phase 6: Upsert + purge ───────────────────────────────
-            for entry in all_entries:
-                self._upsert_pr(data, entry)
+            self._db.upsert_prs_batch(all_entries)
+            self._db.purge_reviewer_prs(excluded_repo_keys)
 
-            # Purge reviewer PRs: excluded repos, drafts, or own
-            data["prs"] = [
-                p
-                for p in data["prs"]
-                if p.get("role") != "reviewer"
-                or (
-                    (p.get("source", ""), p.get("repoName", ""))
-                    not in excluded_repo_keys
-                    and not p.get("isDraft", False)
-                    and not p.get("isMine", False)
-                )
-            ]
-
-            self.save(data)
-            log.info("Synced %d PRs total", len(data["prs"]))
-            return data["prs"]
+            prs = self._db.load_prs()
+            log.info("Synced %d PRs total", len(prs))
+            return prs
 
     async def refresh(
         self,
@@ -710,14 +525,7 @@ class PrDataStore:
     ) -> dict | None:
         """Refresh a single tracked PR. Returns updated entry or None."""
         async with self._lock:
-            data = self.load()
-
-            # Find the PR
-            pr = None
-            for p in data["prs"]:
-                if p["id"] == pr_id and (not source or p.get("source") == source):
-                    pr = p
-                    break
+            pr = self._db.find_pr_by_id(pr_id, source)
             if pr is None:
                 log.warning("PR #%d not found for refresh", pr_id)
                 return None
@@ -736,9 +544,7 @@ class PrDataStore:
                     if not shared:
                         await client.close()
             elif pr_source == "github":
-                # Parse owner_repo from stored URL
                 url = pr.get("url", "")
-                # URL format: https://github.com/{owner}/{repo}/pull/{number}
                 parts = url.replace("https://github.com/", "").split("/")
                 if len(parts) >= 4:
                     owner_repo = f"{parts[0]}/{parts[1]}"
@@ -749,13 +555,10 @@ class PrDataStore:
                     log.warning("Cannot parse GitHub URL for refresh: %s", url)
                     return pr
             else:
-                # Legacy: try default org
-                async with AdoClient() as client:
-                    ado_pr = await client.get_pr(pr_id)
-                    entry = await client.enrich_pr(ado_pr, role=existing_role)
+                log.warning("PR #%d has unknown source '%s', cannot refresh", pr_id, pr_source)
+                return pr
 
-            self._upsert_pr(data, entry)
-            self.save(data)
+            self._db.upsert_pr(entry)
             log.info("Refreshed PR #%d", pr_id)
             return entry
 
@@ -764,14 +567,13 @@ class PrDataStore:
     ) -> list[dict]:
         """Refresh all tracked PRs. Returns updated PR list."""
         async with self._lock:
-            data = self.load()
-            if not data["prs"]:
+            prs = self._db.load_prs()
+            if not prs:
                 log.info("No PRs to refresh")
                 return []
 
-            # Group PRs by source to reuse clients
             by_source: dict[str, list[dict]] = {}
-            for pr in data["prs"]:
+            for pr in prs:
                 src = pr.get("source", "ado/msazure")
                 by_source.setdefault(src, []).append(pr)
 
@@ -783,63 +585,36 @@ class PrDataStore:
                     log.warning("Failed to refresh PR #%d: %s", pr["id"], exc)
                     return pr
 
-            new_entries = []
-            for src, prs in by_source.items():
+            new_entries: list[dict] = []
+            for src, src_prs in by_source.items():
                 if src.startswith("ado/"):
                     org = src.removeprefix("ado/")
                     shared = (ado_clients or {}).get(org)
                     client = shared or AdoClient(org=org)
                     try:
                         entries = await asyncio.gather(
-                            *(_refresh_one(pr, client) for pr in prs)
+                            *(_refresh_one(pr, client) for pr in src_prs)
                         )
                         new_entries.extend(entries)
                     finally:
                         if not shared:
                             await client.close()
                 elif src == "github":
-                    # Keep existing GitHub PRs (suggest full sync for update)
-                    new_entries.extend(prs)
+                    new_entries.extend(src_prs)
                 else:
-                    new_entries.extend(prs)
+                    new_entries.extend(src_prs)
 
-            data["prs"] = list(new_entries)
-            self.save(data)
-            log.info("Refreshed all %d PRs", len(data["prs"]))
-            return data["prs"]
+            self._db.replace_all_prs(new_entries)
+            log.info("Refreshed all %d PRs", len(new_entries))
+            return new_entries
 
     def remove(self, pr_id: int, source: str = "") -> bool:
-        """Remove a PR from tracking. Source should be provided to avoid cross-source removal."""
-        data = self.load()
-        before = len(data["prs"])
-        if source:
-            data["prs"] = [
-                p
-                for p in data["prs"]
-                if not (p["id"] == pr_id and p.get("source") == source)
-            ]
-        else:
-            # Fallback: remove first match only (not all with same ID)
-            idx = next((i for i, p in enumerate(data["prs"]) if p["id"] == pr_id), None)
-            if idx is not None:
-                data["prs"].pop(idx)
-        if len(data["prs"]) < before:
-            self.save(data)
-            log.info("Removed PR #%d", pr_id)
-            return True
-        log.warning("PR #%d not found for removal", pr_id)
-        return False
+        """Remove a PR from tracking."""
+        return self._db.remove_pr(pr_id, source)
 
     def clean(self) -> int:
         """Remove completed/abandoned PRs. Returns count removed."""
-        data = self.load()
-        before = len(data["prs"])
-        data["prs"] = [p for p in data["prs"] if p.get("status") == "active"]
-        removed = before - len(data["prs"])
-        if removed > 0:
-            self.save(data)
-            log.info("Cleaned %d non-active PRs", removed)
-        return removed
+        return self._db.clean_non_active()
 
     async def add_pr_by_url(
         self, url: str, role: str = "reviewer"
@@ -849,21 +624,15 @@ class PrDataStore:
         Returns (enriched_entry, already_existed).
         If the PR is already tracked as 'author', the role is preserved.
         """
-        import re
-
         async with self._lock:
-            data = self.load()
 
-            # Check if PR already exists — preserve author role
             def _effective_role(source: str, pr_id: int) -> str:
-                for p in data.get("prs", []):
-                    if p.get("source") == source and p.get("id") == pr_id:
-                        existing = p.get("role", "author")
-                        if existing == "author":
-                            return "author"
+                existing = self._db.get_pr(source, pr_id)
+                if existing and existing.get("role") == "author":
+                    return "author"
                 return role
 
-            # Try ADO URL: https://dev.azure.com/{org}/{project}/_git/{repo}/pullrequest/{id}
+            # Try ADO URL
             ado_match = re.match(
                 r"https://dev\.azure\.com/([^/]+)/[^/]+/_git/[^/]+/pullrequest/(\d+)",
                 url,
@@ -875,12 +644,11 @@ class PrDataStore:
                 async with AdoClient(org=org) as client:
                     ado_pr = await client.get_pr(pr_id)
                     entry = await client.enrich_pr(ado_pr, role=actual_role)
-                existed = self._upsert_pr(data, entry)
-                self.save(data)
+                existed = self._db.upsert_pr(entry)
                 log.info("Added ADO PR #%d from %s", pr_id, url)
                 return entry, existed
 
-            # Try GitHub URL: https://github.com/{owner}/{repo}/pull/{number}
+            # Try GitHub URL
             gh_match = re.match(r"https://github\.com/([^/]+/[^/]+)/pull/(\d+)", url)
             if gh_match:
                 owner_repo = gh_match.group(1)
@@ -889,8 +657,7 @@ class PrDataStore:
                 gh = GhClient()
                 gh_pr = await gh.get_pr(owner_repo, number)
                 entry = await gh.enrich_pr(gh_pr, role=actual_role)
-                existed = self._upsert_pr(data, entry)
-                self.save(data)
+                existed = self._db.upsert_pr(entry)
                 log.info("Added GitHub PR #%d from %s", number, url)
                 return entry, existed
 

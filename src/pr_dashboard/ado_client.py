@@ -219,14 +219,7 @@ class AdoClient:
             e for e in evaluations if e.get("status") and e["status"] != "notApplicable"
         ]
 
-        required = [
-            e for e in evaluated if e.get("configuration", {}).get("isBlocking")
-        ]
-        optional = [
-            e for e in evaluated if not e.get("configuration", {}).get("isBlocking")
-        ]
-
-        # Process policies (not checks) — exclude from counts and detail list
+        # Process policies(not checks) — exclude from counts and detail list
         _process_policies = {"Minimum number of reviewers", "Require a merge strategy"}
 
         # Individual check details — dedup by (name, isBlocking), keep worst status

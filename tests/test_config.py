@@ -71,7 +71,7 @@ class TestValidateKeybindings:
     def test_duplicate_keys_warn(self, caplog):
         bindings = {"main.help": "x", "main.quit": "x"}
         with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
-            result = _validate_keybindings(bindings)
+            _validate_keybindings(bindings)
         assert any("duplicate key" in r.message for r in caplog.records)
 
     def test_valid_override(self):
