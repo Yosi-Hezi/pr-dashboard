@@ -15,24 +15,28 @@ log = get_logger()
 CONFIG_DIR = Path(user_data_dir("pr-dashboard", ensure_exists=True))
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
+# Reserved keys — do NOT use as hotkeys:
+#   ctrl+c (SIGINT), ctrl+m (Enter), ctrl+i (Tab), ctrl+[ (Escape),
+#   ctrl+h (Backspace), ctrl+j (LF), ctrl+z (suspend/EOF),
+#   ctrl+q (Textual quit), tab/shift+tab (focus), escape (modal dismiss)
 DEFAULT_KEYBINDINGS: dict[str, str] = {
     "main.help": "question_mark",
     "main.toggle_view": "tab",
-    "main.refresh": "r",
-    "main.sync": "ctrl+s",
+    "main.refresh": "s",
+    "main.sync": "S",
     "main.remove": "d",
-    "main.remove_done": "ctrl+d",
-    "main.open": "o",
-    "main.copy_url": "c",
+    "main.remove_done": "D",
+    "main.copy_url": "o",
+    "main.open": "O",
     "main.filter": "slash",
     "main.info": "i",
     "main.log": "l",
     "main.peek": "v",
-    "main.pin": "f",
-    "main.filter_pinned": "ctrl+f",
+    "main.pin": "space",
+    "main.filter_pinned": "f",
     "main.add_pr": "a",
-    "main.manage_sources": "S",
     "main.manage_repos": "m",
+    "main.manage_sources": "M",
     "main.quit": "ctrl+c",
 }
 

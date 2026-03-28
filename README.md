@@ -17,6 +17,16 @@ uv tool install git+https://github.com/Yosi-Hezi/pr-dashboard
 pipx install git+https://github.com/Yosi-Hezi/pr-dashboard
 ```
 
+## Update
+
+```bash
+# With uv
+uv tool upgrade pr-dashboard
+
+# With pipx
+pipx upgrade pr-dashboard
+```
+
 ## Prerequisites
 
 - **Python** ≥ 3.12
@@ -160,3 +170,37 @@ A bundled example (`extensions/open-worktree.ps1`) opens VS Code at the git work
 - **Animated sync spinner**: visual feedback during sync operations
 - **Parallel sync**: sources synced concurrently with rate limiting
 - **Extensible**: run custom scripts with PR context via hotkeys
+
+## Development
+
+### Setup
+
+```bash
+git clone https://github.com/Yosi-Hezi/pr-dashboard
+cd pr-dashboard
+uv sync                # create .venv and install dependencies
+```
+
+### Run locally
+
+```bash
+# Install as editable — creates pr-dashboard.exe in .venv/Scripts
+uv sync --reinstall-package pr-dashboard
+
+# Run
+.venv/Scripts/pr-dashboard          # TUI
+.venv/Scripts/pr-dashboard sync     # CLI
+```
+
+After code changes, re-run `uv sync --reinstall-package pr-dashboard` to rebuild.
+
+### Tests, lint, format
+
+```bash
+# Run all tests
+.venv/Scripts/python -m pytest tests/ -v --tb=short
+
+# Format + lint (install ruff first if needed: uv pip install ruff)
+ruff format src/ tests/
+ruff check src/ tests/ --fix
+```
