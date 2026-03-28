@@ -303,6 +303,15 @@ uv run pr-dashboard list --mine
 - Dedicated Row Rules screen (`R`) shows rules with color swatches, conditions, styles, descriptions, and column actions
 - Signal summary line added to detail panel
 
+### Rule ID Overlay Merging
+- Each default rule has a stable `id` (e.g., `conflicts`, `approved`, `reviewer-required`)
+- Users can selectively override, disable, or extend default rules without replacing all of them
+- **Disable a rule**: `{"id": "conflicts", "enabled": false}`
+- **Override fields**: `{"id": "approved", "color": "#00ff00"}` — merges with the default
+- **Add custom rules**: rules without a matching default id are appended after defaults
+- **Backward compatible**: if no user rule references a default id, full replacement applies (same as before)
+- Rule IDs shown in the Row Rules screen (`R`) for reference
+
 ### Action Column & Signal Columns
 - New **Action** column (default, after Fetched) — shows short recommended action from matched row rule
 - 12 optional signal columns available for users to add via `display.columns` config:

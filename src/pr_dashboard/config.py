@@ -348,15 +348,15 @@ DEFAULT_DISPLAY: dict = {
     },
     "truncation_suffix": "..",
     "row_rules": [
-        {"conditions": {"mergeStatus": "conflicts"}, "color": "#4a2d2d", "italic": True, "description": "Recommended: resolve merge conflicts before continuing", "action": "Fix conflicts"},
-        {"conditions": {"role": "author", "hasActiveComments": True}, "color": "#4a3d1a", "bold": True, "description": "Recommended: address active review comments", "action": "Address comments"},
-        {"conditions": {"role": "reviewer", "myVote": "NoVote", "isRequiredReviewer": True}, "color": "#3d3a1a", "description": "Recommended: review and vote — you are a required reviewer", "action": "Review (required)"},
-        {"conditions": {"role": "reviewer", "myCommentPending": True}, "color": "#2d3a4a", "italic": True, "description": "Recommended: re-review — author replied to your comments", "action": "Re-review"},
-        {"conditions": {"role": "reviewer", "myVote": "WaitingForAuthor", "allCommentsResolved": True}, "color": "#2d3a4a", "italic": True, "description": "Recommended: re-review — author has resolved all comments", "action": "Re-review"},
-        {"conditions": {"status": "Approved"}, "color": "#2d4a2d"},
-        {"conditions": {"status": "Completed"}, "color": "#2d3a4a", "strikethrough": True},
-        {"conditions": {"status": "Abandoned"}, "color": "#4a2d2d", "strikethrough": True},
-        {"conditions": {"role": "reviewer", "myVote": "NoVote"}, "color": "#3a3a2a", "action": "Review"},
+        {"id": "conflicts", "conditions": {"mergeStatus": "conflicts"}, "color": "#4a2d2d", "italic": True, "description": "Recommended: resolve merge conflicts before continuing", "action": "Fix conflicts"},
+        {"id": "author-comments", "conditions": {"role": "author", "hasActiveComments": True}, "color": "#4a3d1a", "bold": True, "description": "Recommended: address active review comments", "action": "Address comments"},
+        {"id": "reviewer-required", "conditions": {"role": "reviewer", "myVote": "NoVote", "isRequiredReviewer": True}, "color": "#3d3a1a", "description": "Recommended: review and vote — you are a required reviewer", "action": "Review (required)"},
+        {"id": "reviewer-pending-reply", "conditions": {"role": "reviewer", "myCommentPending": True}, "color": "#2d3a4a", "italic": True, "description": "Recommended: re-review — author replied to your comments", "action": "Re-review"},
+        {"id": "reviewer-resolved", "conditions": {"role": "reviewer", "myVote": "WaitingForAuthor", "allCommentsResolved": True}, "color": "#2d3a4a", "italic": True, "description": "Recommended: re-review — author has resolved all comments", "action": "Re-review"},
+        {"id": "approved", "conditions": {"status": "Approved"}, "color": "#2d4a2d"},
+        {"id": "completed", "conditions": {"status": "Completed"}, "color": "#2d3a4a", "strikethrough": True},
+        {"id": "abandoned", "conditions": {"status": "Abandoned"}, "color": "#4a2d2d", "strikethrough": True},
+        {"id": "reviewer-optional", "conditions": {"role": "reviewer", "myVote": "NoVote"}, "color": "#3a3a2a", "action": "Review"},
     ],
     "footer_actions": list(DEFAULT_FOOTER_ACTIONS),
 }
@@ -401,32 +401,78 @@ def get_display_config() -> dict:
         suffix if isinstance(suffix, str) else DEFAULT_DISPLAY["truncation_suffix"]
     )
 
-    # Row rules — signal-based styling rules (replaces row_colors)
+    # Row rules — overlay semantics with rule IDs
+    # User rules with an 'id' matching a default: merge fields into the default.
+    # {"id": "conflicts", "enabled": false} disables that default.
+    # {"id": "conflicts", "color": "#ff0000"} overrides the color.
+    # User rules without a matching id: appended after defaults.
+    # Legacy: rules without 'id' and no overlay markers → full replacement (backward compat).
     user_rules = user_display.get("row_rules")
-    # Also accept legacy "row_colors" key for backward compatibility
+    # Also accept legacy "row_colors" key
     if user_rules is None:
         user_rules = user_display.get("row_colors")
     if user_rules is not None and isinstance(user_rules, list):
-        valid_rules = []
+        # Normalize legacy format first
+        normalized_user = []
         for rule in user_rules:
-            if isinstance(rule, dict) and ("color" in rule or "bold" in rule or "italic" in rule or "strikethrough" in rule):
-                # Normalize legacy format (status/mergeStatus at top level → conditions)
-                if "conditions" not in rule and ("status" in rule or "mergeStatus" in rule):
-                    conditions = {}
-                    if "status" in rule:
-                        conditions["status"] = rule["status"]
-                    if "mergeStatus" in rule:
-                        conditions["mergeStatus"] = rule["mergeStatus"]
-                    normalized = {"conditions": conditions}
-                    for k in ("color", "bold", "italic", "strikethrough"):
-                        if k in rule:
-                            normalized[k] = rule[k]
-                    valid_rules.append(normalized)
-                else:
-                    valid_rules.append(rule)
-            else:
+            if not isinstance(rule, dict):
                 log.warning("config: invalid row_rules entry: %s", rule)
-        result["row_rules"] = valid_rules
+                continue
+            if "conditions" not in rule and ("status" in rule or "mergeStatus" in rule):
+                conditions = {}
+                if "status" in rule:
+                    conditions["status"] = rule["status"]
+                if "mergeStatus" in rule:
+                    conditions["mergeStatus"] = rule["mergeStatus"]
+                nr = {"conditions": conditions}
+                for k in ("color", "bold", "italic", "strikethrough", "id", "enabled", "description", "action"):
+                    if k in rule:
+                        nr[k] = rule[k]
+                normalized_user.append(nr)
+            else:
+                normalized_user.append(rule)
+
+        # Detect overlay mode: any user rule references an existing default id
+        default_ids = {r["id"] for r in DEFAULT_DISPLAY["row_rules"] if "id" in r}
+        has_overlay = any(r.get("id") in default_ids for r in normalized_user)
+
+        if has_overlay:
+            # Overlay mode: start from defaults, apply user overrides
+            merged = []
+            user_by_id = {}
+            user_additions = []
+            for r in normalized_user:
+                rid = r.get("id")
+                if rid and rid in default_ids:
+                    user_by_id[rid] = r
+                else:
+                    user_additions.append(r)
+
+            for default_rule in DEFAULT_DISPLAY["row_rules"]:
+                rid = default_rule.get("id", "")
+                if rid in user_by_id:
+                    override = user_by_id[rid]
+                    if override.get("enabled") is False:
+                        continue  # disabled
+                    # Merge: default fields + user overrides
+                    merged_rule = {**default_rule, **override}
+                    merged.append(merged_rule)
+                else:
+                    merged.append(dict(default_rule))
+
+            # Append user additions
+            merged.extend(user_additions)
+            result["row_rules"] = merged
+        else:
+            # Full replacement (backward compatible)
+            valid_rules = [
+                r for r in normalized_user
+                if isinstance(r, dict) and (
+                    "color" in r or "bold" in r or "italic" in r
+                    or "strikethrough" in r or "enabled" in r
+                )
+            ]
+            result["row_rules"] = valid_rules
     else:
         result["row_rules"] = list(DEFAULT_DISPLAY["row_rules"])
 

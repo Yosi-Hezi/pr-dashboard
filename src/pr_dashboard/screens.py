@@ -184,7 +184,7 @@ class RowRulesScreen(ModalScreen):
         if not self._row_rules:
             lines.append("[dim]No row rules configured.[/]")
         else:
-            lines.append("[dim]First matching rule wins. Configure in config.json → display.row_rules[/]")
+            lines.append("[dim]First matching rule wins. Override defaults by id in config.json → display.row_rules[/]")
             lines.append("")
             for i, rule in enumerate(self._row_rules, 1):
                 conds = rule.get("conditions", {})
@@ -205,7 +205,9 @@ class RowRulesScreen(ModalScreen):
                 color = rule.get("color", "")
                 swatch = f"[on {color}]    [/] " if color else "     "
 
-                lines.append(f"{swatch}[b]{i:>2}.[/] {cond_str:<50} → {style_str}")
+                rule_id = rule.get("id", "")
+                id_tag = f" [dim]({rule_id})[/]" if rule_id else ""
+                lines.append(f"{swatch}[b]{i:>2}.[/] {cond_str:<50} → {style_str}{id_tag}")
 
                 desc = rule.get("description", "")
                 if desc:
